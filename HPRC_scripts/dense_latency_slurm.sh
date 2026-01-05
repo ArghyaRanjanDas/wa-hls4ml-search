@@ -66,3 +66,4 @@ for (( CONFIG=START_CONFIG; CONFIG<END_CONFIG; CONFIG++ )); do
 done
 wait
 echo "Job completed."
+

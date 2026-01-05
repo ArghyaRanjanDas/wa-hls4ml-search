@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=fermi_hls4ml_dense_latency
+#SBATCH --job-name=fermi_hls4ml_dense_latency_fasty
 #SBATCH --time=72:00:00
 #SBATCH --mem-per-cpu=16384
 #SBATCH --cpus-per-task=2       
@@ -26,8 +26,7 @@ export MODULE_PATH="${REPO_DIR}/HPRC_scripts/modules.sh"
 #export LD_PRELOAD="/lib/x86_64-linux-gnu/libudev.so.1"
 export VENV_PATH="${REPO_DIR}/HPRC_scripts/venv/bin/activate"
 export VIVADO_SETUP_PATH="/sw/hprc/sw/amd/Vivado/2024.2/settings64.sh"
-export HLS_PROJ_OUT="${REPO_DIR}/hlsproj/output"
-
+export HLS_PROJ_OUT="/scratch/group/p.cis250242.000/wa-hls4ml/hlsproj/output"
 source $MODULE_PATH
 
 # Activate virtual environment
@@ -51,18 +50,18 @@ fi
 # -------------------------------
 # 2. Run the main Python job
 # -------------------------------
-echo "Starting the iter_manager.py job..."
+echo "Starting the iter_manager.py job for dense_latency_fast..."
 for (( CONFIG=START_CONFIG; CONFIG<END_CONFIG; CONFIG++ )); do
     srun -N 1 -n 1 -c 2 --overlap conda run --no-capture-output --name wa-hls4ml python3 "${REPO_DIR}/iter_manager_v2.py" \
-        -f "${REPO_DIR}/dense_latency_extended/dense_latency_extended_batch_$CONFIG.json" \
-        -o "/scratch/group/p.cis250242.000/wa-hls4ml/output/dense_latency_extended_run_vsynth_2024-2" \
+        -f "${REPO_DIR}/dense_latency_fast/dense_latency_fast_batch_$CONFIG.json" \
+        -o "/scratch/group/p.cis250242.000/wa-hls4ml/output/dense_latency_fast_run_vsynth_2024-2" \
         --hls4ml_strat latency \
-        --rf_upper 0 \
+        --rf_upper 2 \
         --rf_lower 1 \
         --rf_step 1 \
         --prefix $REPO_DIR \
         --hlsproj $HLS_PROJ_OUT \
-        --vsynth > "logs/dense_latency_extended_$CONFIG.log" &
+        --vsynth &> "logs/dense_latency_fast_$CONFIG.log" &
 done
 wait
 echo "Job completed."

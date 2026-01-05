@@ -7,4 +7,4 @@ fi
 
 export NUM_TASKS=$(($2 - $1))
 
-sbatch --ntasks=$NUM_TASKS dense_latency_extended_slurm.sh $1 $2
+sbatch --ntasks=$NUM_TASKS dense_latency_fast_slurm.sh $1 $2
