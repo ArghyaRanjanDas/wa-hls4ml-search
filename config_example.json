@@ -1,4 +1,4 @@
-{
+{ //DO NOT RUN, YAML IS NOT VALID DUE TO COMMENTS!
     // Model architecture parameters
     "dense_lb": 16,                    // Lower bound for dense layer size (must be power of 2)
     "dense_ub": 256,                   // Upper bound for dense layer size (must be power of 2)
@@ -32,5 +32,6 @@
     },
     
     // Network structure
-    "total_layers": 6                  // Total number of layers in generated networks
+    "min_layer_count": 2, // Minimum number of layers in a network
+    "max_layer_count": 7 // maximum number of layers in a network
 }
