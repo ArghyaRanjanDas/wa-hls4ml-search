@@ -1,0 +1,78 @@
+{
+  "rf_sweep": {
+    "lower": [
+      {"value": 64, "weight": 0.35},
+      {"value": 128, "weight": 0.65}
+    ],
+    "upper": [
+      {"value": 129, "weight": 1.0}
+    ],
+    "step": [
+      {"value": 1, "weight": 0.7},
+      {"value": 16, "weight": 0.3}
+    ]
+  },
+  "knobs": {
+    "strategy": [
+      {"value": "Resource", "weight": 0.9},
+      {"value": "Latency", "weight": 0.1}
+    ],
+    "clock_period": [
+      {"value": 8.0, "weight": 0.6},
+      {"value": 10.0, "weight": 0.3},
+      {"value": 12.0, "weight": 0.1}
+    ],
+    "part": [
+      {"value": "xcku115-flvb2104-2-i", "weight": 1.0}
+    ],
+    "min_fifo_depth": [
+      {"value": 16, "weight": 0.7},
+      {"value": 32, "weight": 0.3}
+    ],
+    "tech": [
+      {"value": "asic", "weight": 1.0}
+    ],
+    "io_type": [
+      {"value": "io_stream", "weight": 0.9},
+      {"value": "io_parallel", "weight": 0.1}
+    ],
+    "granularity": [
+      {"value": "name", "weight": 1.0}
+    ],
+    "default_precision": [
+      {"value": "ac_fixed<16,8,true>", "weight": 0.8},
+      {"value": "ac_fixed<14,7,true>", "weight": 0.2}
+    ],
+    "max_precision": [
+      {"value": "ac_fixed<16,8,true>", "weight": 1.0}
+    ],
+    "num_samples": [
+      {"value": 8, "weight": 0.8},
+      {"value": 16, "weight": 0.2}
+    ],
+    "run_synth": [
+      {"value": 1, "weight": 1.0}
+    ],
+    "run_csim": [
+      {"value": 0, "weight": 1.0}
+    ],
+    "run_cosim": [
+      {"value": 0, "weight": 1.0}
+    ],
+    "run_vsynth": [
+      {"value": 0, "weight": 1.0}
+    ],
+    "run_reset": [
+      {"value": "auto", "weight": 1.0}
+    ],
+    "auto_exit": [
+      {"value": 1, "weight": 1.0}
+    ],
+    "project_name": [
+      {"value": "myproject", "weight": 1.0}
+    ],
+    "extra_cmd": [
+      {"value": "puts {smallplus_sweep}", "weight": 1.0}
+    ]
+  }
+}
