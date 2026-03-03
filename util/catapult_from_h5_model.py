@@ -9,7 +9,6 @@ This script is intended to run inside Catapult's /HLS4ML flow environment
 import argparse
 import os
 import numpy as np
-import tensorflow as tf
 from tensorflow.keras.models import load_model
 from qkeras.utils import _add_supported_quantized_objects
 import catapult_ai_nn
@@ -42,91 +41,86 @@ def _resolve_io_shapes(model):
     return in_shape, n_classes
 
 
+def _patch_min_fifo_depth(out_dir: str, project_name: str, min_fifo_depth: int) -> int:
+    """
+    Work around Catapult FIFO library mapping failures seen with fifo_depth="1"
+    in generated io_stream channel pragmas. Clamp to a safer minimum depth.
+
+    Returns:
+        number of replacements
+    """
+    firmware_cpp = os.path.join(out_dir, "firmware", f"{project_name}.cpp")
+    if not os.path.isfile(firmware_cpp):
+        return 0
+
+    with open(firmware_cpp, "r") as fp:
+        cpp_text = fp.read()
+
+    old = 'fifo_depth="1"'
+    new = f'fifo_depth="{min_fifo_depth}"'
+    replaced_count = cpp_text.count(old)
+    if replaced_count > 0:
+        cpp_text = cpp_text.replace(old, new)
+        with open(firmware_cpp, "w") as fpw:
+            fpw.write(cpp_text)
+    return replaced_count
+
+
 def create_parser():
     parser = argparse.ArgumentParser(description="Generate Catapult HLS4ML project from .h5 model")
     parser.add_argument("--model_path", required=True, help="Path to Keras/QKeras .h5 model")
     parser.add_argument("--output_dir", required=True, help="Output directory for generated Catapult project")
-    parser.add_argument("--project_name", default="myproject", help="Project name (default: myproject)")
-    parser.add_argument("--reuse_factor", type=int, default=16, help="Default reuse factor")
-    parser.add_argument("--clock_period", type=float, default=5.0, help="Clock period in ns")
-    parser.add_argument("--strategy", default="Latency", help="HLS strategy (Latency/Resource)")
-    parser.add_argument("--tech", default="fpga", help="Target technology (fpga|asic)")
-    parser.add_argument("--io_type", default="io_stream", help="hls4ml IO type (io_stream|io_parallel)")
-    parser.add_argument("--granularity", default="name", help="hls4ml config granularity")
     parser.add_argument(
-        "--default_precision",
-        default="ac_fixed<16,8,true>",
-        help="hls4ml default precision",
+        "--config_json",
+        default=None,
+        help="Path to CatapultDataflowConfig JSON (controls ALL config_for_dataflow knobs)",
     )
-    parser.add_argument(
-        "--max_precision",
-        default="ac_fixed<16,8,true>",
-        help="hls4ml max precision",
-    )
-    parser.add_argument(
-        "--part",
-        default="xcku115-flvb2104-2-i",
-        help="Target FPGA part (default known-good Catapult example part)",
-    )
-    parser.add_argument("--num_samples", type=int, default=8, help="Number of dummy samples for setup")
     return parser
 
 
 def main():
     args = create_parser().parse_args()
-    if args.num_samples <= 0:
-        raise ValueError("--num_samples must be > 0")
 
     custom_objects = {}
     _add_supported_quantized_objects(custom_objects)
     model = load_model(args.model_path, custom_objects=custom_objects)
 
     in_shape, n_classes = _resolve_io_shapes(model)
-    x_test = np.random.rand(args.num_samples, *in_shape).astype("float32")
-    y_test = np.zeros((args.num_samples,), dtype="int32")
+
+    # Load base config
+    # If config_json is absent, fall back to defaults (still works, but you lose reproducibility)
+    cfg0 = CatapultDataflowConfig.load_json(args.config_json) if args.config_json else CatapultDataflowConfig()
+
+    # Override run-specific output dir only (all other knobs come from cfg_json)
+    cfg = cfg0.override(output_dir=args.output_dir)
+
+    # Dummy dataset for setup
+    x_test = np.random.rand(cfg.num_samples, *in_shape).astype("float32")
+    y_test = np.zeros((cfg.num_samples,), dtype="int32")
     if n_classes <= 1:
         # Keep labels in valid range if model output has a single channel.
         y_test[:] = 0
 
-    dataflow_cfg = CatapultDataflowConfig(
-        num_samples=args.num_samples,
-        granularity=args.granularity,
-        default_precision=args.default_precision,
-        default_reuse_factor=args.reuse_factor,
-        max_precision=args.max_precision,
-        output_dir=args.output_dir,
-        project_name=args.project_name,
-        tech=args.tech,
-        part=args.part,
-        io_type=args.io_type,
-        strategy=args.strategy,
-        clock_period=args.clock_period,
-    )
+    # Full control surface: pass ALL config knobs into config_for_dataflow
+    cfg_kwargs = cfg.to_kwargs(signature_only=True, drop_none=True, int_flags=True)
 
-    cfg_kwargs = dict(
+    config_ccs = catapult_ai_nn.config_for_dataflow(
         model=model,
         x_test=x_test,
         y_test=y_test,
-        num_samples=dataflow_cfg.num_samples,
-        granularity=dataflow_cfg.granularity,
-        default_precision=dataflow_cfg.default_precision,
-        max_precision=dataflow_cfg.max_precision,
-        clock_period=dataflow_cfg.clock_period,
-        project_name=dataflow_cfg.project_name,
-        output_dir=dataflow_cfg.output_dir,
-        default_reuse_factor=dataflow_cfg.default_reuse_factor,
-        strategy=dataflow_cfg.strategy,
-        io_type=dataflow_cfg.io_type,
-        tech=dataflow_cfg.tech,
+        **cfg_kwargs,
     )
-    if dataflow_cfg.part:
-        cfg_kwargs["part"] = dataflow_cfg.part
-    cfg = catapult_ai_nn.config_for_dataflow(**cfg_kwargs)
 
-    hls_model = catapult_ai_nn.generate_dataflow(model, cfg)
+    hls_model = catapult_ai_nn.generate_dataflow(model, config_ccs)
+
+    # Post-gen patch (removes need for TCL regsub block)
+    nrep = _patch_min_fifo_depth(cfg.output_dir, cfg.project_name, cfg.min_fifo_depth)
+    if nrep > 0:
+        print(f"[WARN] Patched firmware FIFO depth pragmas: replaced {nrep} entries with depth={cfg.min_fifo_depth}")
+
     hls_model.compile()
 
-    print(f"Generated Catapult project at: {os.path.abspath(args.output_dir)}")
+    print(f"Generated Catapult project at: {os.path.abspath(cfg.output_dir)}")
 
 
 if __name__ == "__main__":

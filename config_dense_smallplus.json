@@ -11,7 +11,7 @@
 
   "weight_int_width": 2,
   "activ_int_width": 2,
-  "max_bit_width_po2": 8,
+  "max_bit_width_po2": 5,
 
   "activation_rate": 1.0,
 

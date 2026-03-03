@@ -1,0 +1,47 @@
+{
+  "num_samples": 20,
+  "granularity": "name",
+  "default_precision": "ac_fixed<16,6>",
+  "default_reuse_factor": 64,
+  "max_precision": null,
+
+  "output_dir": "my-hls-test",
+  "project_name": "myproject",
+  "project_dir": "Catapult",
+  "namespace": null,
+
+  "tech": "asic",
+  "asiclibs": "nangate-45nm_beh",
+  "asicfifo": "hls4ml_lib.mgc_pipe_mem",
+  "asicram": "ccs_sample_mem.ccs_ram_sync_1R1W",
+
+  "part": "xcku115-flvb2104-2-i",
+  "fifo": "Xilinx_FIFO.FIFO_SYNC",
+  "ram": "Xilinx_RAMS.BLOCK_1R1W_RBW",
+
+  "io_type": "io_stream",
+  "strategy": "Latency",
+  "clock_period": 5.0,
+
+  "csim": 0,
+  "SCVerify": 0,
+  "Synth": 1,
+  "vhdl": 1,
+  "verilog": 1,
+  "RTLSynth": 0,
+
+  "RandomTBFrames": 2,
+  "ParamStore": "global",
+
+  "PowerEst": 0,
+  "PowerOpt": 0,
+  "BuildBUP": 0,
+  "BUPWorkers": 0,
+  "LaunchDA": 0,
+  "startup": "",
+
+  "write_weights_txt": 1,
+  "write_tar": 0,
+
+  "min_fifo_depth": 16
+}
