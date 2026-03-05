@@ -64,6 +64,9 @@ cmd=(make
 if [[ -n "${CATAPULT_SCRIPT}" ]]; then
   cmd+=("CATAPULT_SCRIPT=${CATAPULT_SCRIPT}")
 fi
+if [[ -n "${LM_LICENSE_FILE:-}" ]]; then
+  cmd+=("LM_LICENSE_FILE=${LM_LICENSE_FILE}")
+fi
 
 if (( DRY_RUN == 1 )); then
   printf 'DRY_RUN: '; printf '%q ' "${cmd[@]}"; echo

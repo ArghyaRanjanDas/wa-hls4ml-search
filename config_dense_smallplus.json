@@ -1,9 +1,9 @@
 {
-  "dense_lb": 8,
-  "dense_ub": 64,
-  "conv_filters_ub": 16,
-  "conv_init_size_lb": 16,
-  "conv_init_size_ub": 32,
+  "dense_lb": 4,
+  "dense_ub": 8,
+  "conv_filters_ub": 8,
+  "conv_init_size_lb": 8,
+  "conv_init_size_ub": 8,
 
   "q_chance": 1.0,
   "flatten_chance": 0.0,

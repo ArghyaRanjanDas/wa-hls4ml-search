@@ -119,6 +119,7 @@ def main():
         print(f"[WARN] Patched firmware FIFO depth pragmas: replaced {nrep} entries with depth={cfg.min_fifo_depth}")
 
     hls_model.compile()
+    # TODO: Check if this already generated a json file/ ~ hls.report to get the report info
 
     print(f"Generated Catapult project at: {os.path.abspath(cfg.output_dir)}")
 

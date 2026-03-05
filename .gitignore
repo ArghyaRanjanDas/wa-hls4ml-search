@@ -217,7 +217,7 @@ dataset
 /dense_resource_models/
 /plots/
 /results/
-/output/
+/output*/*
 /generated_data/
 
 # Generated HLS/flow work directories
@@ -230,6 +230,12 @@ dataset
 /monitoring/grafana/import/*.csv
 /monitoring/grafana/runtime/
 /monitoring/local_dashboard/*.html
+
+# License server config (user-specific)
+license_servers.json
+
+# workspace
+/workspace*/*
 
 # Any AI Stuff
 /.bot/

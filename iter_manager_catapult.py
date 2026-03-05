@@ -2,6 +2,7 @@ import argparse
 import os
 import json
 import glob
+import sys
 import uuid
 from datetime import datetime
 from tensorflow.keras.models import model_from_json
@@ -15,6 +16,66 @@ from util.catapult_dataflow_config import CatapultDataflowConfig
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+JOB_SEP = "\t"
+
+
+def _format_job_line(hls_dir, shell_script, flow_tcl, cfg_json):
+    """Serialize one job's parameters to a single tab-separated line for joblist.txt."""
+    parts = [
+        os.path.abspath(hls_dir),
+        os.path.abspath(shell_script) if shell_script else "",
+        os.path.abspath(flow_tcl) if flow_tcl else "",
+        os.path.abspath(cfg_json) if cfg_json else "",
+    ]
+    return JOB_SEP.join(parts)
+
+
+def _parse_job_line(line):
+    """Deserialize a joblist.txt line back into keyword arguments for _run_catapult_flow."""
+    parts = line.strip().split(JOB_SEP)
+    if len(parts) != 4:
+        raise ValueError(f"Expected 4 tab-separated fields, got {len(parts)}: {line!r}")
+    hls_dir, shell_script, flow_tcl, cfg_json = parts
+    return {
+        "hls_dir": hls_dir,
+        "shell_script": shell_script or None,
+        "flow_tcl": flow_tcl or None,
+        "cfg_json": cfg_json or None,
+    }
+
+
+def _load_license_config(path):
+    """
+    Load license_servers.json and return (total_licenses, lm_license_file_str).
+
+    The JSON format is:
+    {
+      "servers": [
+        {"host": "server1.example.com", "port": 1717, "licenses": 4},
+        {"host": "server2.example.com", "port": 1717, "licenses": 2}
+      ]
+    }
+
+    Returns:
+        tuple: (total_licenses: int, lm_license_file: str)
+               lm_license_file is in FlexLM format: "port@host1:port@host2:..."
+    """
+    with open(path, "r") as f:
+        cfg = json.load(f)
+
+    servers = cfg["servers"]
+    if not servers:
+        raise ValueError(f"No servers defined in {path}")
+
+    total_licenses = sum(s["licenses"] for s in servers)
+    lm_parts = [f"{s['port']}@{s['host']}" for s in servers]
+    lm_license_file = ":".join(lm_parts)
+
+    if total_licenses <= 0:
+        raise ValueError(f"Total licenses must be > 0, got {total_licenses}")
+
+    return total_licenses, lm_license_file
 
 
 def _make_run_dir(output_root):
@@ -121,6 +182,8 @@ def main(args):
         base_cfg = CatapultDataflowConfig()
         logger.info("Using default CatapultDataflowConfig()")
 
+    # --- Prepare phase: generate models, save configs, collect job entries ---
+    job_lines = []
 
     co = {}
     _add_supported_quantized_objects(co)
@@ -165,15 +228,69 @@ def main(args):
             cfg_json_path = os.path.join(tag_data_dir, "dataflow_config.json")
             cfg.save_json(cfg_json_path)
 
-            _run_catapult_flow(
+            job_lines.append(_format_job_line(
                 hls_dir=tag_build_dir,
                 shell_script=args.catapult_shell,
                 flow_tcl=args.flow_tcl,
                 cfg_json=cfg_json_path,
-            )
+            ))
 
             # Placeholder for report parsing
             # raw_json = os.path.join(raw_report_dir, f"{tag}.json")
+            # TODO: After synthesis, parse reports and save to raw_report_dir, then process and save to proc_report_dir
+
+    # Write joblist (for both parallel and sequential runs)
+    joblist_path = os.path.join(run_dir, "joblist.txt")
+    with open(joblist_path, "w") as jf:
+        jf.write("\n".join(job_lines) + "\n")
+    logger.info(f"Wrote {len(job_lines)} jobs to {joblist_path}")
+
+    # --- Synthesis phase ---
+    if args.license_config:
+        # Parallel mode via GNU parallel
+        total_licenses, lm_license_file = _load_license_config(args.license_config)
+        logger.info(f"Parallel mode: {total_licenses} licenses, LM_LICENSE_FILE={lm_license_file}")
+
+        env = os.environ.copy()
+        env["LM_LICENSE_FILE"] = lm_license_file
+
+        joblog_path = os.path.join(run_dir, f"parallel_joblog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tsv")
+
+        parallel_cmd = [
+            "parallel",
+            "--line-buffer",
+            "--halt", "soon,fail=1",
+            "--joblog", joblog_path,
+            "-j", str(total_licenses),
+            sys.executable, os.path.abspath(__file__),
+            "-o", args.output,
+            "--run-single-job", "{}",
+        ]
+
+        logger.info(f"Launching GNU parallel with -j {total_licenses}")
+        logger.info(f"Job log: {joblog_path}")
+
+        result = subprocess.run(
+            parallel_cmd,
+            input="\n".join(job_lines) + "\n",
+            text=True,
+            env=env,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"GNU parallel exited with code {result.returncode}")
+            logger.error(f"Check job log: {joblog_path}")
+            sys.exit(result.returncode)
+
+        logger.info(f"All parallel jobs completed.\nJob log: {joblog_path}")
+    else:
+        # Sequential mode (backward compatible)
+        for i, job_line in enumerate(job_lines):
+            job_kwargs = _parse_job_line(job_line)
+            logger.info(f"Running job {i+1}/{len(job_lines)}: {job_kwargs['hls_dir']}")
+            _run_catapult_flow(**job_kwargs)
+
+    logger.info(f"Run complete. Results in: {run_dir}")
 
 
 def create_parser():
@@ -191,6 +308,8 @@ def create_parser():
     parser.add_argument('--catapult_shell', type=str, default=None, help='Path to catapult_shell.sh')
     parser.add_argument('--flow_tcl', type=str, default=None, help='Path to catapult_hls4ml_flow.tcl')
     parser.add_argument('--flow_config_json', type=str, default=None, help='Path to CatapultDataflowConfig JSON')
+    parser.add_argument('--license_config', type=str, default=None, help='Path to license_servers.json. Enables parallel synthesis via GNU parallel.')
+    parser.add_argument('--run-single-job', type=str, default=None, metavar='JOB_LINE', help='Run a single synthesis job from a tab-separated job line (used internally by GNU parallel)')
 
     return parser
 
@@ -198,4 +317,10 @@ def create_parser():
 if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
-    main(args)
+
+    if args.run_single_job is not None:
+        job_kwargs = _parse_job_line(args.run_single_job)
+        logger.info(f"Running single job: {job_kwargs['hls_dir']}")
+        _run_catapult_flow(**job_kwargs)
+    else:
+        main(args)

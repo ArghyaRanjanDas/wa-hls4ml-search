@@ -1,0 +1,6 @@
+{
+  "servers": [
+    {"host": "fasic-admin1.fnal.gov", "port": 1717, "licenses": 1},
+    {"host": "fasic-beast2.fnal.gov", "port": 1717, "licenses": 5}
+  ]
+}

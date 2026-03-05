@@ -1,8 +1,8 @@
 {
-  "num_samples": 20,
+  "num_samples": 2,
   "granularity": "name",
   "default_precision": "ac_fixed<16,6>",
-  "default_reuse_factor": 64,
+  "default_reuse_factor": 16,
   "max_precision": null,
 
   "output_dir": "my-hls-test",
