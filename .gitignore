@@ -236,6 +236,8 @@ license_servers.json
 
 # workspace
 /workspace*/*
+/*mnist*/*
+
 
 # Any AI Stuff
 /.bot/
