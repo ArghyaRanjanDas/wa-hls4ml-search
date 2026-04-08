@@ -1,256 +1,271 @@
 import os
 import re
+import csv
+import json
+import logging
 
 import yaml
 
-
-def read_catapult_report(hls_dir, full_report=False):
-    if not os.path.exists(hls_dir):
-        print(f'Path {hls_dir} does not exist. Exiting.')
-        return
-
-    prj_dir = None
-    top_func_name = None
-
-    if os.path.isfile(hls_dir + '/build_prj.tcl'):
-        prj_dir, top_func_name = _parse_build_script(hls_dir + '/build_prj.tcl')
-        print('Prj Dir:', prj_dir)
-        print('Top func name:', top_func_name)
-
-    if prj_dir is None or top_func_name is None:
-        print('Unable to read project data. Exiting.')
-        return
-
-    sln_dir = hls_dir + '/' + prj_dir
-    if not os.path.exists(sln_dir):
-        print(f'Project {prj_dir} does not exist. Rerun "hls4ml build -p {hls_dir}".')
-        return
-
-    solutions = _find_solutions(sln_dir, hls_dir)
-
-    for sln in solutions:
-        print(f'Reports for solution "{sln}":\n')
-        _find_reports(sln_dir + '/' + sln, top_func_name, full_report)
-
-
-def _parse_build_script(script_path):
-    prj_dir = None
-    top_func_name = None
-
-    with open(script_path) as f:
-        for line in f.readlines():
-            if 'project new' in line:
-                prj_dir = line.split()[-1]
-            if 'set design_top' in line:
-                top_func_name = line.split()[-1]
-
-    return prj_dir, top_func_name
-
-
-def _find_solutions(sln_dir, hls_dir):
-    solutions = []
-    prj_dir, top_func_name = _parse_build_script(hls_dir + '/build_prj.tcl')
-    for path in os.listdir(sln_dir):
-        # check if current path is a dir
-        if os.path.isdir(os.path.join(sln_dir, path)):
-            pathstring = str(path)
-            if top_func_name in pathstring:
-                solutions.append(pathstring)
-    return solutions
-
-
-def _find_reports(sln_dir, top_func_name, full_report=False):
-    csim_file = sln_dir + '/../../tb_data/csim_results.log'
-    if os.path.isfile(csim_file):
-        _show_csim_report(csim_file)
-    else:
-        print('C simulation report not found.')
-
-    syn_file = sln_dir + '/rtl.rpt'
-    if os.path.isfile(syn_file):
-        _show_synth_report(syn_file, full_report)
-    else:
-        print('Synthesis report not found.')
-
-    cosim_file = sln_dir + f'/sim/report/{top_func_name}_cosim.rpt'
-    if os.path.isfile(cosim_file):
-        _show_cosim_report(cosim_file)
-    else:
-        print('Co-simulation report not found.')
-
-    timing_report = sln_dir + '/vivado_concat_v/timing_summary_synth.rpt'
-    if os.path.isfile(timing_report):
-        _show_timing_report(timing_report)
-    else:
-        print('Timing synthesis report not found.')
-
-    utilization_report = sln_dir + '/vivado_concat_v/utilization_synth.rpt'
-    if os.path.isfile(utilization_report):
-        _show_utilization_report(utilization_report)
-    else:
-        print('Utilization synthesis report not found.')
-
-
-def _show_csim_report(csim_file):
-    with open(csim_file) as f:
-        print('C SIMULATION RESULT:')
-        print(f.read())
-
-
-def _show_synth_report(synth_file, full_report=False):
-    with open(synth_file) as f:
-        print('SYNTHESIS REPORT:')
-        for line in f.readlines()[2:]:
-            if not full_report and '* DSP48' in line:
-                break
-            print(line, end='')
-
-
-def _show_cosim_report(cosim_file):
-    with open(cosim_file) as f:
-        print('CO-SIMULATION RESULT:')
-        print(f.read())
-
-
-def _show_timing_report(timing_report):
-    with open(timing_report) as f:
-        print('TIMING REPORT:')
-        print(f.read())
-
-
-def _show_utilization_report(utilization_report):
-    with open(utilization_report) as f:
-        print('UTILIZATION REPORT:')
-        print(f.read())
-
-
-def _get_abs_and_percentage_values(unparsed_cell):
-    return int(unparsed_cell.split('(')[0]), float(unparsed_cell.split('(')[1].replace('%', '').replace(')', ''))
+logger = logging.getLogger(__name__)
 
 
 def parse_catapult_report(output_dir):
     if not os.path.exists(output_dir):
-        print(f'Project OutputDir {output_dir} does not exist. Exiting.')
-        return
+        logger.error(f'Output directory {output_dir} does not exist.')
+        return None
 
-    # Read the YAML config file to determine the project settings
-    with open(output_dir + '/hls4ml_config.yml') as yfile:
-        ydata = yaml.safe_load(yfile)
+    config = _load_config(output_dir)
+    if config is None:
+        logger.error(f'No config file found in {output_dir}.')
+        return None
 
-    if ydata['ProjectDir'] is not None:
-        ProjectDir = ydata['ProjectDir']
-    else:
-        ProjectDir = ydata['ProjectName'] + '_prj'
-    ProjectName = ydata['ProjectName']
-
-    sln_dir = output_dir + '/' + ProjectDir
-    if not os.path.exists(sln_dir):
-        print(f'Project {ProjectDir} does not exist. Rerun "hls4ml build -p {output_dir}".')
-        return
-
-    solutions = _find_solutions(sln_dir, output_dir)
-    if len(solutions) > 1:
-        print(f'WARNING: Found {len(solutions)} solution(s) in {sln_dir}. Using the first solution.')
+    project_dir = config.get('ProjectDir') or (config.get('ProjectName', 'myproject') + '_prj')
+    project_name = config.get('ProjectName', 'myproject')
 
     report = {}
+    report['Config'] = config
 
-    sim_file = output_dir + '/tb_data/csim_results.log'
-    if os.path.isfile(sim_file):
-        csim_results = []
-        with open(sim_file) as f:
-            for line in f.readlines():
-                csim_results.append([r for r in line.split()])
-        report['CSimResults'] = csim_results
+    sln_dir = os.path.join(output_dir, project_dir)
+    if not os.path.isdir(sln_dir):
+        logger.error(f'Project directory {sln_dir} does not exist.')
+        return report
 
-    util_report_file = output_dir + '/' + ProjectDir + '/' + solutions[0] + '/vivado_concat_v/utilization_synth.rpt'
-    if os.path.isfile(util_report_file):
-        util_report = {}
-        a = 0
-        with open(util_report_file) as f:
-            for line in f.readlines():
-                # Sometimes, phrases such as 'CLB Registers' can show up in the non-tabular sections of the report
-                if '|' in line:
-                    if ('CLB LUTs' in line) and (a == 0):
-                        a += 1
-                        util_report['LUT'] = line.split('|')[2].strip()
-                    elif ('CLB Registers' in line) and (a == 1):
-                        a += 1
-                        util_report['FF'] = line.split('|')[2].strip()
-                    elif ('RAMB18 ' in line) and (a == 2):
-                        a += 1
-                        util_report['BRAM_18K'] = line.split('|')[2].strip()
-                    elif ('DSPs' in line) and (a == 3):
-                        a += 1
-                        util_report['DSP48E'] = line.split('|')[2].strip()
-                    elif ('URAM' in line) and (a == 4):
-                        a += 1
-                        util_report['URAM'] = line.split('|')[2].strip()
-        report['UtilizationReport'] = util_report
-    else:
-        print('Utilization report not found.')
+    ver_dir = _find_latest_solution(sln_dir, project_name)
+    if ver_dir is None:
+        logger.error(f'No solution versions found in {sln_dir}.')
+        return report
 
-    timing_report_file = output_dir + '/' + ProjectDir + '/' + solutions[0] + '/vivado_concat_v/timing_summary_synth.rpt'
-    if os.path.isfile(timing_report_file):
-        timing_report = {}
-        with open(timing_report_file) as f:
-            while not re.search('WNS', next(f)):
-                pass
-            # skip the successive line
-            next(f)
-            result = next(f).split()
+    csim_file = os.path.join(output_dir, 'tb_data', 'csim_results.log')
+    if os.path.isfile(csim_file):
+        with open(csim_file) as f:
+            report['CSimResults'] = [line.split() for line in f]
 
-        timing_report['WNS'] = float(result[0])
-        timing_report['TNS'] = float(result[1])
-        timing_report['WHS'] = float(result[4])
-        timing_report['THS'] = float(result[5])
-        timing_report['WPWS'] = float(result[8])
-        timing_report['TPWS'] = float(result[9])
+    qofr_file = os.path.join(ver_dir, 'nnet_qofr.csv')
+    if os.path.isfile(qofr_file):
+        report['QOFRSummary'] = _parse_qofr_csv(qofr_file)
 
-        report['TimingReport'] = timing_report
-    else:
-        print('Timing report not found.')
+    rtl_rpt_file = os.path.join(ver_dir, 'rtl.rpt')
+    if os.path.isfile(rtl_rpt_file):
+        report['AreaReport'] = _parse_rtl_rpt_area(rtl_rpt_file)
+        report['DesignSummary'] = _parse_rtl_rpt_design_summary(rtl_rpt_file)
 
-    latest_prj_dir = get_latest_project_prj_directory(output_dir, ProjectDir)
-    latest_ver_dir = get_latest_project_version_directory(latest_prj_dir, ProjectName)
-    file_path = os.path.join(latest_ver_dir, 'nnet_layer_results.txt')
-    print('Results in nnet_layer_results.txt from:', file_path)
+    layer_csv = os.path.join(ver_dir, 'nnet_layer_results.csv')
+    if os.path.isfile(layer_csv):
+        report['LayerResults'] = _parse_layer_results_csv(layer_csv)
 
-    # Initialize the array
-    report['PerLayerQOFR'] = []
-    # Open the file and read its contents
-    with open(file_path) as file:
-        # Read each line and append it to the list
-        for line in file:
-            report['PerLayerQOFR'].append(line.strip())  # strip() removes leading/trailing
+    layer_summary_csv = os.path.join(output_dir, 'firmware', 'layer_summary.csv')
+    if os.path.isfile(layer_summary_csv):
+        report['LayerSummary'] = _parse_layer_summary_csv(layer_summary_csv)
+
+    # Vivado RTL synth reports (only present when RTLSynth=1)
+    util_rpt = os.path.join(ver_dir, 'vivado_concat_v', 'utilization_synth.rpt')
+    if os.path.isfile(util_rpt):
+        report['UtilizationReport'] = _parse_utilization_report(util_rpt)
+
+    timing_rpt = os.path.join(ver_dir, 'vivado_concat_v', 'timing_summary_synth.rpt')
+    if os.path.isfile(timing_rpt):
+        report['TimingReport'] = _parse_timing_report(timing_rpt)
 
     return report
 
 
-def get_latest_project_version_directory(base_path, ProjectName):
-    versions = [d for d in os.listdir(base_path) if d.startswith(ProjectName + '.v')]
+def read_catapult_report(output_dir, full_report=False):
+    report = parse_catapult_report(output_dir)
+    if report is None:
+        return
+
+
+def _load_config(output_dir):
+    """Try cat_ai_nn_config_final.json first, fall back to hls4ml_config.yml."""
+    json_path = os.path.join(output_dir, 'cat_ai_nn_config_final.json')
+    if os.path.isfile(json_path):
+        with open(json_path) as f:
+            return json.load(f)
+
+    yml_path = os.path.join(output_dir, 'hls4ml_config.yml')
+    # print("Looking for config in", yml_path)
+    if os.path.isfile(yml_path):
+        with open(yml_path) as f:
+            return yaml.safe_load(f)
+
+    return None
+
+
+def _find_latest_solution(sln_dir, project_name):
+    """Return full path to the highest-numbered {project_name}.vN dir, or None."""
+    if not os.path.isdir(sln_dir):
+        return None
+
+    prefix = project_name + '.v'
+    versions = []
+    for d in os.listdir(sln_dir):
+        if d.startswith(prefix) and os.path.isdir(os.path.join(sln_dir, d)):
+            suffix = d[len(prefix):]
+            try:
+                versions.append((int(suffix), d))
+            except ValueError:
+                continue
+
     if not versions:
-        raise FileNotFoundError('Error: No versions found.')
-    latest_version = max(versions)
-    return os.path.join(base_path, latest_version)
+        return None
+
+    versions.sort(key=lambda x: x[0])
+    return os.path.join(sln_dir, versions[-1][1])
 
 
-def get_latest_project_prj_directory(base_path, ProjectDir):
-    versions = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d)) and d.startswith(ProjectDir)]
-    if not versions:
-        raise FileNotFoundError('Error: No versions found.')
-    latest_version = max(versions)
-    return os.path.join(base_path, latest_version)
+def _parse_qofr_csv(csv_path):
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        row = next(reader)
+        return {
+            'total_area': float(row['total_area']),
+            'latency_cycles': int(row['latency_cycles']),
+            'thruput_cycles': int(row['thruput_cycles']),
+        }
 
 
-def qofr(report):
-    # Access the PerLayerQOFR list from the report dictionary
-    PerLayerQOFR = report.get('PerLayerQOFR', [])
+def _parse_layer_results_csv(csv_path):
+    layers = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f, delimiter=';')
+        for row in reader:
+            layer = {}
+            layer['Layer'] = row.get('Layer', '').strip()
+            if not layer['Layer']:
+                continue
+            layer['Unroll'] = row.get('Unroll', '').strip()
+            for field in ['II', 'Latency', 'Thruput']:
+                val = (row.get(field) or '').strip()
+                if val:
+                    try:
+                        layer[field] = int(val)
+                    except ValueError:
+                        layer[field] = val
+            for field in ['Area', 'TotalPwr', 'DynPwr', 'LeakPwr']:
+                val = (row.get(field) or '').strip()
+                if val:
+                    try:
+                        layer[field] = float(val)
+                    except ValueError:
+                        layer[field] = val
+            layers.append(layer)
+    return layers
 
-    # Check if the list is not empty
-    if PerLayerQOFR:
-        # print('Results in nnet_layer_results.txt:')
-        # Iterate over each line in the list and print it
-        for line in PerLayerQOFR:
-            print(line)
-    else:
-        print('No results found in nnet_layer_results.txt')
+
+def _parse_layer_summary_csv(csv_path):
+    layers = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f, delimiter=';')
+        for row in reader:
+            layer = {k: v.strip() if isinstance(v, str) else v for k, v in row.items()}
+            if layer.get('Layer Name'):
+                layers.append(layer)
+    return layers
+
+
+def _parse_rtl_rpt_area(rtl_rpt_file):
+    """Extract Post-Assignment area scores from the 'Area Scores' section of rtl.rpt."""
+    area = {}
+    labels = {
+        'Total Area Score:': 'TotalAreaScore',
+        'Total Reg:': 'TotalReg',
+        'DataPath:': 'DataPath',
+        'MUX:': 'MUX',
+        'FUNC:': 'FUNC',
+        'LOGIC:': 'LOGIC',
+        'BUFFER:': 'BUFFER',
+        'MEM:': 'MEM',
+        'ROM:': 'ROM',
+        'REG:': 'REG',
+        'FSM:': 'FSM',
+    }
+
+    try:
+        in_area_section = False
+        with open(rtl_rpt_file) as f:
+            for line in f:
+                if 'Area Scores' in line and 'Post' not in line:
+                    in_area_section = True
+                    continue
+                if not in_area_section:
+                    continue
+                if 'Register-to-Variable' in line:
+                    break
+
+                stripped = line.strip()
+                for label, key in labels.items():
+                    if stripped.startswith(label):
+                        nums = re.findall(r'[\d]+\.[\d]+', line)
+                        if nums:
+                            area[key] = float(nums[-1])
+                        break
+    except Exception as e:
+        logger.warning(f'Failed to parse area from rtl.rpt: {e}')
+
+    return area
+
+
+def _parse_rtl_rpt_design_summary(rtl_rpt_file):
+    summary = {}
+    try:
+        with open(rtl_rpt_file) as f:
+            for line in f:
+                if 'Design Total:' in line:
+                    parts = line.split('Design Total:')[1].split()
+                    if len(parts) >= 4:
+                        summary['real_ops'] = int(parts[0])
+                        summary['latency'] = int(parts[1])
+                        summary['throughput'] = int(parts[2])
+                        summary['reset_length'] = int(parts[3])
+                    if len(parts) >= 5:
+                        summary['ii'] = int(parts[4])
+                    break
+    except Exception as e:
+        logger.warning(f'Failed to parse design summary from rtl.rpt: {e}')
+
+    return summary
+
+
+def _parse_utilization_report(util_rpt_file):
+    util = {}
+    idx = 0
+    with open(util_rpt_file) as f:
+        for line in f:
+            if '|' in line:
+                if ('CLB LUTs' in line) and (idx == 0):
+                    idx += 1
+                    util['LUT'] = line.split('|')[2].strip()
+                elif ('CLB Registers' in line) and (idx == 1):
+                    idx += 1
+                    util['FF'] = line.split('|')[2].strip()
+                elif ('RAMB18 ' in line) and (idx == 2):
+                    idx += 1
+                    util['BRAM_18K'] = line.split('|')[2].strip()
+                elif ('DSPs' in line) and (idx == 3):
+                    idx += 1
+                    util['DSP48E'] = line.split('|')[2].strip()
+                elif ('URAM' in line) and (idx == 4):
+                    idx += 1
+                    util['URAM'] = line.split('|')[2].strip()
+    return util
+
+
+def _parse_timing_report(timing_rpt_file):
+    timing = {}
+    try:
+        with open(timing_rpt_file) as f:
+            for line in f:
+                if re.search('WNS', line):
+                    next(f)  # skip header separator
+                    result = next(f).split()
+                    timing['WNS'] = float(result[0])
+                    timing['TNS'] = float(result[1])
+                    timing['WHS'] = float(result[4])
+                    timing['THS'] = float(result[5])
+                    timing['WPWS'] = float(result[8])
+                    timing['TPWS'] = float(result[9])
+                    break
+    except Exception as e:
+        logger.warning(f'Failed to parse timing report: {e}')
+
+    return timing

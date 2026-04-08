@@ -493,8 +493,9 @@ def create_parser():
     parser.add_argument('-o', '--output_dir', type=str, default='dense_resource_test', help='Output directory')
     return parser
 
-# Initialize Ray
-ray.init(num_cpus=os.cpu_count(), log_to_driver=False)
+# Initialize Ray — cap CPUs to avoid hanging on login nodes with many cores
+_ray_num_cpus = int(os.environ.get("RAY_NUM_CPUS", min(os.cpu_count() or 1, 4)))
+ray.init(num_cpus=_ray_num_cpus, log_to_driver=False)
 
 @ray.remote(max_retries=10, retry_exceptions=False)
 def generate_model(bitwidth, config_params):

@@ -4,6 +4,7 @@ import json
 import glob
 import sys
 import uuid
+import tarfile
 from datetime import datetime
 from tensorflow.keras.models import model_from_json
 from qkeras.utils import _add_supported_quantized_objects
@@ -12,6 +13,7 @@ import logging
 import shutil
 
 from util.catapult_dataflow_config import CatapultDataflowConfig
+from catapult_report import parse_catapult_report#, print_catapult_report
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -76,6 +78,27 @@ def _load_license_config(path):
         raise ValueError(f"Total licenses must be > 0, got {total_licenses}")
 
     return total_licenses, lm_license_file
+
+
+def _make_tarfile(output_path, source_dir, extra_files=None, exclude_dirs=None):
+    """Create .tar.gz of source_dir, skipping directory names in exclude_dirs.
+
+    extra_files: list of absolute paths added at the tarball root (outside source_dir).
+    """
+    exclude_set = set(exclude_dirs or [])
+
+    def _filter(tarinfo):
+        for part in tarinfo.name.split(os.sep):
+            if part in exclude_set:
+                return None
+        return tarinfo
+
+    with tarfile.open(output_path, "w:gz") as tar:
+        tar.add(source_dir, arcname=os.path.basename(source_dir), filter=_filter)
+        for extra in (extra_files or []):
+            path, arcname = extra if isinstance(extra, tuple) else (extra, os.path.basename(extra))
+            if os.path.isfile(path):
+                tar.add(path, arcname=arcname)
 
 
 def _make_run_dir(output_root):
@@ -218,6 +241,10 @@ def main(args):
             h5_data = os.path.join(tag_data_dir, "keras_model.h5")
             model.save(h5_data, include_optimizer=False)
 
+            model_json_path = os.path.join(tag_build_dir, "model.json")
+            with open(model_json_path, "w") as f:
+                f.write(model_desc)
+
             # Copy .h5 into build dir for Catapult
             h5_build = os.path.join(tag_build_dir, "keras_model.h5")
             shutil.copy2(h5_data, h5_build)
@@ -235,9 +262,6 @@ def main(args):
                 cfg_json=cfg_json_path,
             ))
 
-            # Placeholder for report parsing
-            # raw_json = os.path.join(raw_report_dir, f"{tag}.json")
-            # TODO: After synthesis, parse reports and save to raw_report_dir, then process and save to proc_report_dir
 
     # Write joblist (for both parallel and sequential runs)
     joblist_path = os.path.join(run_dir, "joblist.txt")
@@ -290,6 +314,42 @@ def main(args):
             logger.info(f"Running job {i+1}/{len(job_lines)}: {job_kwargs['hls_dir']}")
             _run_catapult_flow(**job_kwargs)
 
+    # --- Report collection phase: parse all completed builds ---
+    logger.info("Collecting synthesis reports...")
+    build_dirs = sorted(glob.glob(os.path.join(build_root, "*", "catapult_native")))
+    parsed_count = 0
+    for catapult_dir in build_dirs:
+        tag = os.path.basename(os.path.dirname(catapult_dir))
+        raw_json_path = os.path.join(raw_report_dir, f"{tag}.json")
+
+        if os.path.exists(raw_json_path):
+            logger.info(f"Report already exists for {tag}, skipping.")
+            parsed_count += 1
+            continue
+
+        report = parse_catapult_report(catapult_dir)
+        if report is None:
+            logger.warning(f"Failed to parse report for {tag}")
+            continue
+
+        with open(raw_json_path, "w") as f:
+            json.dump(report, f, indent=2)
+
+        model_json_path = os.path.join(os.path.dirname(catapult_dir), "model.json")
+        tar_path = os.path.join(tar_dir, f"{tag}.tar.gz")
+        _make_tarfile(
+            tar_path,
+            catapult_dir,
+            extra_files=[(model_json_path, "model.json"), (raw_json_path, "report.json")],
+            exclude_dirs=["SIF"],
+        )
+
+        parsed_count += 1
+        logger.info(f"Saved report for {tag} → {raw_json_path}")
+        logger.info(f"Tarball: {tar_path}")
+        # print_catapult_report(report)
+
+    logger.info(f"Collected {parsed_count}/{len(build_dirs)} reports to {raw_report_dir}")
     logger.info(f"Run complete. Results in: {run_dir}")
 
 
@@ -324,3 +384,18 @@ if __name__ == "__main__":
         _run_catapult_flow(**job_kwargs)
     else:
         main(args)
+
+"""
+TODO: 
+
+1. "QOFRSummary": {
+    "total_area": 101426.0,
+    "latency_cycles": 169,
+    "thruput_cycles": 64
+  },
+
+
+  Change the spelling
+
+2. Implemet it on the NERSC
+""" 

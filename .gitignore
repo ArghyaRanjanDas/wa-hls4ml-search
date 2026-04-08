@@ -233,6 +233,8 @@ dataset
 
 # License server config (user-specific)
 license_servers.json
+license_servers_perlmutter.json
+Perlmutter_scripts/license_servers_active.json
 
 # workspace
 /workspace*/*
@@ -241,3 +243,4 @@ license_servers.json
 
 # Any AI Stuff
 /.bot/
+/test*/
