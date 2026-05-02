@@ -93,6 +93,21 @@ grep CATAPULT_VER ~/bin/siemens.sh
 # If missing or older: ask Giuseppe or Arghya for an updated copy
 ```
 
+### 8. Verify the Apptainer container image (`catapult_rocky.sif`) is in place
+
+The container provides Rocky Linux 8 + the libraries Catapult depends on
+(it does NOT bundle Catapult itself — that's what step 5's rsync is for).
+The default expected location is `~/work/tool-containers/catapult_rocky.sif`.
+
+```bash
+ls -lh ~/work/tool-containers/catapult_rocky.sif
+# Expected: ~1.3 GB file
+# If missing: ask Giuseppe or a teammate to scp/rsync their copy, or
+# (advanced) build from the recipe at:
+#   ~/work/tool-containers/containers/apptainer_catapult_rocky.def
+# Override with `--sif /path/to/catapult_rocky.sif` if your copy lives elsewhere.
+```
+
 ## Run a smoke test (1 task, ~10-30 min)
 
 ```bash
@@ -156,9 +171,14 @@ the polling loop is running, the SLURM tasks keep going independently —
 you just lose the report-collection. To re-collect after the array finishes:
 
 ```bash
+cd $HOME/work/wa-hls4ml-search
+source $SCRATCH/venv_hls4ml/bin/activate
 python iter_manager_catapult.py -o $SCRATCH/anywhere \
   --collect-slurm $SCRATCH/catapult_*/run_<timestamp>_<uuid>
 ```
+
+(The `-o` is required by argparse but ignored when `--collect-slurm` is set;
+any path works.)
 
 ## Common errors + fixes
 

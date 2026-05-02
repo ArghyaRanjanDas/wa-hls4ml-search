@@ -38,7 +38,7 @@ export CATAPULT_VER="${CATAPULT_VER:-2026.1_1}"
 # override to a per-user copy under $SCRATCH (each user must rsync their own
 # copy first — see QUICKSTART.md). Override with CATAPULT_PATH_OVERRIDE=...
 # if your install lives somewhere else.
-export CATAPULT_PATH_OVERRIDE="${CATAPULT_PATH_OVERRIDE:-${SCRATCH}/cad/Siemens/Catapult/${CATAPULT_VER}}"
+export CATAPULT_PATH_OVERRIDE="${CATAPULT_PATH_OVERRIDE:-${SCRATCH:-/pscratch/sd/${USER:0:1}/${USER}}/cad/Siemens/Catapult/${CATAPULT_VER}}"
 
 # --env-setup picks which env script to source inside the container:
 #   siemens (default, current behavior): ${HOME}/bin/siemens.sh
@@ -57,7 +57,7 @@ Usage:
 
 Options:
   --sif <path>        Path to catapult_rocky.sif
-                      (default: ~/work/catapult_rocky.sif)
+                      (default: ~/work/tool-containers/catapult_rocky.sif)
   --work-dir <path>   Working directory passed into container
   --cmd <tcl>         TCL command (default: puts [pwd]; exit)
   --env-setup <mode>  Which env to source: siemens (default) or genesis

@@ -10,7 +10,7 @@
 #   2. On correlator4: ensure license forward is running:
 #        ssh -N -g -L 1717:fasic-admin1.fnal.gov:1717 \
 #                  -L 40003:fasic-admin1.fnal.gov:40003 \
-#                  adas1@fasic-admin1.fnal.gov &
+#                  ${FNAL_USER}@fasic-admin1.fnal.gov &
 #      (this is normally already running when doing synthesis on correlator4)
 #
 # Usage (on Perlmutter):
