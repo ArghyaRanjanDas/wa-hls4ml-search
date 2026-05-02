@@ -1,28 +1,20 @@
 #!/usr/bin/env bash
 # setup_tunnels.sh — Forward Catapult licenses from correlator4 to Perlmutter
 #
-# Auto-detects which license server is reachable on correlator4 and sets up
-# the appropriate tunnel. Writes license_servers_active.json with actual license
-# count so iter_manager can use the right parallelism.
+# Simplified approach: correlator4 already has ports 1717 and 40003 forwarded
+# from fasic-admin1 (the user's normal license SSH). This script just bridges
+# Perlmutter → correlator4:1717/40003 in a tmux session.
 #
-# Supported license servers (tried in order of preference):
-#
-#   fasic-135413.fnal.gov  (5 licenses) — reverse tunnel via port 2210
-#     Prerequisites (one-time, NOT this script):
-#       1. On fasic-135413: ssh -fNT -R 127.0.0.1:2210:localhost:22 ${FNAL_USER}@correlator4.fnal.gov
-#       2. Perlmutter SSH public key in fasic-135413:~/.ssh/authorized_keys
-#
-#   fasic-admin1.fnal.gov  (1 license) — direct port forward on correlator4
-#     Prerequisites (one-time, NOT this script):
-#       On correlator4: ssh -fN -g -L 1717:fasic-admin1.fnal.gov:1717 \
-#                                  -L 40003:fasic-admin1.fnal.gov:40003 \
-#                                  ${FNAL_USER}@fasic-admin1.fnal.gov
+# Prerequisites (run before this script):
+#   1. On Perlmutter: KRB5_CONFIG=~/krb5.conf kinit ${FNAL_USER}@FNAL.GOV
+#   2. On correlator4: ensure license forward is running:
+#        ssh -N -g -L 1717:fasic-admin1.fnal.gov:1717 \
+#                  -L 40003:fasic-admin1.fnal.gov:40003 \
+#                  ${FNAL_USER}@fasic-admin1.fnal.gov &
+#      (this is normally already running when doing synthesis on correlator4)
 #
 # Usage (on Perlmutter):
 #   KRB5_CONFIG=~/krb5.conf bash Perlmutter_scripts/setup_tunnels.sh
-#
-# Output:
-#   Perlmutter_scripts/license_servers_active.json  (pass to --license_config)
 #
 # Reconnect after laptop close:
 #   ssh ${NERSC_USER}@<same-login-node>.perlmutter.nersc.gov
@@ -49,12 +41,12 @@ fi
 export KRB5_CONFIG="${KRB5_CONFIG:-${HOME}/krb5.conf}"
 LICENSE_PORT=1717
 CATAPULT_PORT=40003
-REVERSE_PORT=2210
 CORRELATOR4=correlator4.fnal.gov
 
 echo "=== Catapult License Tunnel Setup ==="
-echo "FNAL user:   ${FNAL_USER}"
-echo "Correlator4: ${CORRELATOR4}"
+echo "FNAL user:    ${FNAL_USER}"
+echo "Correlator4:  ${CORRELATOR4}"
+echo "Forwarding:   ${LICENSE_PORT} + ${CATAPULT_PORT} via correlator4"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -68,112 +60,70 @@ if ! hostname -f | grep -q "perlmutter"; then
 fi
 
 # ---------------------------------------------------------------------------
-# Capture KRB5 ccache FIRST — before any SSH calls.
-# On Perlmutter, systemd sets the default ccache to DIR:/run/user/.../krb5cc
-# (empty). SSH/GSSAPI falls back to "no credentials" unless we explicitly
-# prefix KRB5CCNAME on every ssh invocation.
+# Verify correlator4 has the license ports forwarded (prerequisite check)
 # ---------------------------------------------------------------------------
-_KRB5CCNAME=$(KRB5_CONFIG="${HOME}/krb5.conf" klist 2>/dev/null | awk '/Ticket cache:/{print $3}')
-export KRB5CCNAME="${_KRB5CCNAME}"
-
+echo "--- Checking correlator4 has license ports forwarded ---"
 _SSH_OPTS="-o GSSAPIAuthentication=yes -o GSSAPIDelegateCredentials=yes \
            -o PreferredAuthentications=gssapi-with-mic \
            -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=15"
 
-# ---------------------------------------------------------------------------
-# Auto-detect which license server is available on correlator4
-# ---------------------------------------------------------------------------
-echo "--- Detecting license server on correlator4 ---"
+MISSING_PORTS=""
+for PORT in ${LICENSE_PORT} ${CATAPULT_PORT}; do
+    if ! ssh ${_SSH_OPTS} "${FNAL_USER}@${CORRELATOR4}" \
+             "ss -ltn | grep -q ':${PORT}'" 2>/dev/null; then
+        MISSING_PORTS="${MISSING_PORTS} ${PORT}"
+    fi
+done
 
-SELECTED_SERVER=""
-SELECTED_LICENSES=0
-
-# Prefer fasic-135413 (5 licenses): detected by port 2210 on correlator4
-if KRB5CCNAME="${_KRB5CCNAME}" ssh ${_SSH_OPTS} "${FNAL_USER}@${CORRELATOR4}" \
-       "ss -ltn | grep -q ':${REVERSE_PORT}'" 2>/dev/null; then
-    SELECTED_SERVER="fasic-135413"
-    SELECTED_LICENSES=5
-    echo "Detected fasic-135413 reverse tunnel (port ${REVERSE_PORT}) — 5 licenses"
-
-# Fallback: fasic-admin1 (1 license): detected by port 1717 on correlator4
-elif KRB5CCNAME="${_KRB5CCNAME}" ssh ${_SSH_OPTS} "${FNAL_USER}@${CORRELATOR4}" \
-       "ss -ltn | grep -q ':${LICENSE_PORT}'" 2>/dev/null; then
-    SELECTED_SERVER="fasic-admin1"
-    SELECTED_LICENSES=1
-    echo "Detected fasic-admin1 direct forward (port ${LICENSE_PORT}) — 1 license"
-
-else
-    echo "ERROR: no license server reachable on correlator4."
+if [[ -n "${MISSING_PORTS}" ]]; then
+    echo "ERROR: correlator4 is missing license ports:${MISSING_PORTS}"
     echo ""
-    echo "To use fasic-135413 (5 licenses) — run this ON fasic-135413:"
-    echo "  ssh -fNT -R 127.0.0.1:${REVERSE_PORT}:localhost:22 ${FNAL_USER}@${CORRELATOR4}"
-    echo ""
-    echo "To use fasic-admin1 (1 license) — run this ON correlator4:"
-    echo "  ssh -fN -g -L ${LICENSE_PORT}:fasic-admin1.fnal.gov:${LICENSE_PORT} \\"
-    echo "            -L ${CATAPULT_PORT}:fasic-admin1.fnal.gov:${CATAPULT_PORT} \\"
+    echo "Start the license forward on correlator4 first:"
+    echo "  ssh ${FNAL_USER}@${CORRELATOR4}"
+    echo "  ssh -fN -g -L 1717:fasic-admin1.fnal.gov:1717 \\"
+    echo "            -L 40003:fasic-admin1.fnal.gov:40003 \\"
     echo "            ${FNAL_USER}@fasic-admin1.fnal.gov"
     exit 1
 fi
+echo "correlator4 has ports ${LICENSE_PORT} and ${CATAPULT_PORT} forwarded."
 
 # ---------------------------------------------------------------------------
-# Build tmux tunnel commands based on selected server
+# Capture KRB5 ccache so tmux window inherits it
 # ---------------------------------------------------------------------------
+_KRB5CCNAME=$(KRB5_CONFIG="${HOME}/krb5.conf" klist 2>/dev/null | awk '/Ticket cache:/{print $3}')
+export KRB5CCNAME="${_KRB5CCNAME}"
 
 # Strip CVMFS apptainer paths from LD_LIBRARY_PATH (conflicts with libkrb5support.so)
 _CLEAN_LD="export LD_LIBRARY_PATH=\$(echo \"\$LD_LIBRARY_PATH\" | tr ':' '\n' | grep -v cvmfs | tr '\n' ':' | sed 's/:\$//'); "
 
-_SSH_COMMON_OPTS="-o ServerAliveInterval=60 -o ServerAliveCountMax=5 \
-  -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-
+# ---------------------------------------------------------------------------
+# Start tmux tunnel: Perlmutter → correlator4:1717/40003
+# ---------------------------------------------------------------------------
 echo ""
-echo "--- Starting license tunnel(s) in tmux session 'catapult_tunnels' ---"
-tmux kill-session -t catapult_tunnels 2>/dev/null || true
+echo "--- Starting license tunnel in tmux ---"
 
-if [[ "${SELECTED_SERVER}" == "fasic-135413" ]]; then
-    # Step 2: Forward port 2210 from Perlmutter to correlator4 (GSSAPI auth)
-    TUNNEL_STEP2="${_CLEAN_LD}export KRB5_CONFIG=${HOME}/krb5.conf; export KRB5CCNAME=${_KRB5CCNAME}; \
+TUNNEL_CMD="${_CLEAN_LD}export KRB5_CONFIG=${HOME}/krb5.conf; export KRB5CCNAME=${_KRB5CCNAME}; \
 while true; do \
-  KRB5CCNAME=${_KRB5CCNAME} ssh -N ${_SSH_COMMON_OPTS} \
-    -o GSSAPIAuthentication=yes -o GSSAPIDelegateCredentials=yes \
+  ssh -N \
+    -o ServerAliveInterval=60 \
+    -o ServerAliveCountMax=5 \
+    -o ExitOnForwardFailure=yes \
+    -o GSSAPIAuthentication=yes \
+    -o GSSAPIDelegateCredentials=yes \
     -o PreferredAuthentications=gssapi-with-mic \
-    -L ${REVERSE_PORT}:127.0.0.1:${REVERSE_PORT} \
-    ${FNAL_USER}@${CORRELATOR4}; \
-  echo 'Step2 tunnel dropped, reconnecting in 5s...'; sleep 5; \
-done"
-
-    # Step 3: Forward license ports via port 2210 to fasic-135413 (key auth)
-    TUNNEL_STEP3="while true; do \
-  while ! ss -ltn | grep -q ':${REVERSE_PORT}'; do \
-    echo 'Waiting for port ${REVERSE_PORT}...'; sleep 2; \
-  done; \
-  ssh -N -p ${REVERSE_PORT} ${_SSH_COMMON_OPTS} \
-    -L ${LICENSE_PORT}:127.0.0.1:${LICENSE_PORT} \
-    -L ${CATAPULT_PORT}:127.0.0.1:${CATAPULT_PORT} \
-    ${FNAL_USER}@localhost; \
-  echo 'Step3 tunnel dropped, reconnecting in 5s...'; sleep 5; \
-done"
-
-    tmux new-session  -d -s catapult_tunnels -n licenses  "${TUNNEL_STEP2}"
-    tmux new-window      -t catapult_tunnels -n licenses2 "${TUNNEL_STEP3}"
-
-else
-    # fasic-admin1: single hop, correlator4 already has ports forwarded
-    TUNNEL_CMD="${_CLEAN_LD}export KRB5_CONFIG=${HOME}/krb5.conf; export KRB5CCNAME=${_KRB5CCNAME}; \
-while true; do \
-  KRB5CCNAME=${_KRB5CCNAME} ssh -N ${_SSH_COMMON_OPTS} \
-    -o GSSAPIAuthentication=yes -o GSSAPIDelegateCredentials=yes \
-    -o PreferredAuthentications=gssapi-with-mic \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
     -L ${LICENSE_PORT}:127.0.0.1:${LICENSE_PORT} \
     -L ${CATAPULT_PORT}:127.0.0.1:${CATAPULT_PORT} \
     ${FNAL_USER}@${CORRELATOR4}; \
   echo 'Tunnel dropped, reconnecting in 5s...'; sleep 5; \
 done"
 
-    tmux new-session -d -s catapult_tunnels -n licenses "${TUNNEL_CMD}"
-fi
+tmux kill-session -t catapult_tunnels 2>/dev/null || true
+tmux new-session -d -s catapult_tunnels -n licenses "${TUNNEL_CMD}"
 
-echo "Waiting 8s for tunnel(s) to establish..."
-sleep 8
+echo "Waiting 6s for tunnel to establish..."
+sleep 6
 
 # ---------------------------------------------------------------------------
 # Verify
@@ -189,28 +139,19 @@ for PORT in ${LICENSE_PORT} ${CATAPULT_PORT}; do
 done
 
 if (( OK == 1 )); then
-    # Write license_servers_active.json so iter_manager knows actual license count
-    ACTIVE_JSON="${SCRIPT_DIR}/license_servers_active.json"
-    printf '{"servers": [{"host": "127.0.0.1", "port": %d, "licenses": %d}]}\n' \
-        "${LICENSE_PORT}" "${SELECTED_LICENSES}" > "${ACTIVE_JSON}"
-
     echo ""
     echo "=== All tunnels up ==="
-    echo "Server:  ${SELECTED_SERVER} (${SELECTED_LICENSES} license(s))"
-    echo "Ports:   ${LICENSE_PORT} and ${CATAPULT_PORT} available at localhost"
-    echo "Config:  ${ACTIVE_JSON}"
+    echo "License ports ${LICENSE_PORT} and ${CATAPULT_PORT} available at localhost."
     echo ""
     echo "Next steps:"
     echo "  1. Detach tmux:  Ctrl+B D"
-    echo "  2. Run synthesis:"
-    echo "       python iter_manager_catapult.py ... \\"
-    echo "           --license_config Perlmutter_scripts/license_servers_active.json"
+    echo "  2. Run synthesis: python iter_manager_catapult.py ... --license_config license_servers_perlmutter.json"
     echo ""
     echo "To reconnect later:"
     echo "  ssh ${NERSC_USER}@$(hostname).perlmutter.nersc.gov"
     echo "  tmux attach -t catapult_tunnels"
 else
     echo ""
-    echo "Tunnel did not come up fully. Check tmux:"
+    echo "Tunnel did not come up. Check tmux:"
     echo "  tmux attach -t catapult_tunnels"
 fi

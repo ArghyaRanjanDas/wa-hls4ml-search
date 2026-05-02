@@ -11,11 +11,10 @@ from qkeras.utils import _add_supported_quantized_objects
 import subprocess
 import logging
 import shutil
-import time
-from collections import Counter
 
 from util.catapult_dataflow_config import CatapultDataflowConfig
 from catapult_report import parse_catapult_report#, print_catapult_report
+from slurm import job_array, cli as slurm_cli
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -171,24 +170,6 @@ def _run_catapult_flow(hls_dir, shell_script=None, flow_tcl=None, cfg_json=None)
     )
 
 
-def _read_fnal_user():
-    """Read FNAL_USER from Perlmutter_scripts/.env, falling back to env var."""
-    repo_dir = os.path.dirname(os.path.abspath(__file__))
-    env_file = os.path.join(repo_dir, "Perlmutter_scripts", ".env")
-    if os.path.isfile(env_file):
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("FNAL_USER=") and not line.startswith("#"):
-                    return line.split("=", 1)[1].strip()
-    fnal_user = os.environ.get("FNAL_USER")
-    if fnal_user:
-        return fnal_user
-    raise RuntimeError(
-        "FNAL_USER not found. Set it in Perlmutter_scripts/.env or export FNAL_USER."
-    )
-
-
 def _collect_reports(run_dir):
     """Parse all completed builds in run_dir and create report JSONs + tarballs."""
     build_root = os.path.join(run_dir, "build")
@@ -232,194 +213,6 @@ def _collect_reports(run_dir):
         logger.info(f"Tarball: {tar_path}")
 
     logger.info(f"Collected {parsed_count}/{len(build_dirs)} reports to {raw_report_dir}")
-
-
-def _write_job_array_script(run_dir, joblist_path, total_licenses, lm_license_file,
-                            output_dir, args, login_node):
-    """Write {run_dir}/job_array.sh for SLURM job array submission."""
-    n_jobs = sum(1 for _ in open(joblist_path) if _.strip())
-    script_path = os.path.abspath(__file__)
-    venv_activate = os.path.join(os.environ.get("SCRATCH", ""), "venv_hls4ml", "bin", "activate")
-
-    catapult_shell = args.catapult_shell
-    if catapult_shell:
-        catapult_shell = os.path.abspath(catapult_shell)
-    flow_tcl = args.flow_tcl
-    if flow_tcl:
-        flow_tcl = os.path.abspath(flow_tcl)
-
-    # Build the --run-single-job invocation with optional shell/tcl overrides
-    single_job_cmd = f'python "{script_path}" -o "{output_dir}"'
-    if catapult_shell:
-        single_job_cmd += f' --catapult_shell "{catapult_shell}"'
-    if flow_tcl:
-        single_job_cmd += f' --flow_tcl "{flow_tcl}"'
-    single_job_cmd += ' --run-single-job "${JOB_LINE}"'
-
-    script_content = f"""#!/bin/bash
-#SBATCH --job-name=catapult_hls4ml
-#SBATCH --account={args.slurm_account}
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
-#SBATCH --constraint={args.slurm_constraint}
-#SBATCH --time={args.slurm_time}
-#SBATCH --qos={args.slurm_qos}
-#SBATCH --array=0-{n_jobs - 1}%{total_licenses}
-#SBATCH --output={run_dir}/slurm_logs/task_%a.out
-#SBATCH --error={run_dir}/slurm_logs/task_%a.err
-
-set -euo pipefail
-
-# ---- Read job line for this array task ----
-JOB_LINE=$(sed -n "$(($SLURM_ARRAY_TASK_ID + 1))p" "{joblist_path}")
-if [[ -z "${{JOB_LINE}}" ]]; then
-    echo "ERROR: no job line for SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID" >&2
-    exit 1
-fi
-echo "Task $SLURM_ARRAY_TASK_ID: ${{JOB_LINE}}"
-
-# ---- SSH tunnel back to login node for license ports ----
-# License tunnels (1717, 40003) are pre-established on the login node
-# via setup_tunnels.sh, bound to 127.0.0.1. Compute nodes reach them
-# by SSH-forwarding back to the login node (NERSC internal auth).
-LOGIN_NODE="{login_node}"
-LICENSE_PORT=1717
-CATAPULT_PORT=40003
-
-# Pick unique local ports per task to avoid collisions on shared nodes
-LOCAL_LIC_PORT=$((LICENSE_PORT + SLURM_ARRAY_TASK_ID))
-LOCAL_CAT_PORT=$((CATAPULT_PORT + SLURM_ARRAY_TASK_ID))
-
-ssh -N \
-    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes -o ConnectTimeout=30 \
-    -o ServerAliveInterval=60 -o ServerAliveCountMax=5 \
-    -o ExitOnForwardFailure=yes \
-    -L ${{LOCAL_LIC_PORT}}:127.0.0.1:${{LICENSE_PORT}} \
-    -L ${{LOCAL_CAT_PORT}}:127.0.0.1:${{CATAPULT_PORT}} \
-    "${{LOGIN_NODE}}" &
-SSH_PID=$!
-sleep 5
-
-# Verify tunnel — check process is alive and not a zombie
-_SSH_STATE=$(ps -o state= -p ${{SSH_PID}} 2>/dev/null || echo "X")
-if [[ "${{_SSH_STATE}}" == "Z" || "${{_SSH_STATE}}" == "X" ]]; then
-    echo "ERROR: SSH tunnel to ${{LOGIN_NODE}} failed (process state: ${{_SSH_STATE}})" >&2
-    wait ${{SSH_PID}} 2>/dev/null || true
-    exit 1
-fi
-
-cleanup() {{
-    kill ${{SSH_PID}} 2>/dev/null || true
-}}
-trap cleanup EXIT
-
-echo "Tunnel established: localhost:${{LOCAL_LIC_PORT}} -> ${{LOGIN_NODE}}:${{LICENSE_PORT}}"
-echo "Tunnel established: localhost:${{LOCAL_CAT_PORT}} -> ${{LOGIN_NODE}}:${{CATAPULT_PORT}}"
-
-# ---- Set license environment ----
-export LM_LICENSE_FILE="${{LOCAL_LIC_PORT}}@127.0.0.1"
-
-# ---- Activate venv and run synthesis ----
-source "{venv_activate}"
-{single_job_cmd}
-"""
-
-    script_path_out = os.path.join(run_dir, "job_array.sh")
-    with open(script_path_out, "w") as f:
-        f.write(script_content)
-    os.chmod(script_path_out, 0o755)
-    logger.info(f"Wrote SLURM job array script: {script_path_out}")
-    return script_path_out
-
-
-def _submit_slurm_array(args, run_dir, joblist_path, job_lines, total_licenses,
-                        lm_license_file):
-    """Detect login node, write job_array.sh, submit via sbatch, poll until done."""
-    # Create slurm_logs directory
-    slurm_logs_dir = os.path.join(run_dir, "slurm_logs")
-    os.makedirs(slurm_logs_dir, exist_ok=True)
-
-    # Detect the login node where license tunnels are running.
-    # Compute nodes will SSH back here to reach 127.0.0.1:1717 and :40003.
-    import socket
-    login_node = socket.gethostname()
-    login_node_file = os.path.join(run_dir, "login_node.txt")
-    with open(login_node_file, "w") as f:
-        f.write(login_node)
-    logger.info(f"Login node: {login_node}")
-
-    # Pre-flight: verify license tunnel ports are listening on this login node
-    import subprocess as _sp
-    for port in (1717, 40003):
-        check = _sp.run(["ss", "-ltn"], capture_output=True, text=True)
-        if f":{port}" not in check.stdout:
-            raise SystemExit(
-                f"ERROR: Port {port} is not listening on {login_node}. "
-                f"Did you run setup_tunnels.sh on this login node first?"
-            )
-    logger.info("Pre-flight OK: license ports 1717 and 40003 are listening")
-
-    # Write job_array.sh
-    script_path = _write_job_array_script(
-        run_dir, joblist_path, total_licenses, lm_license_file, args.output, args,
-        login_node,
-    )
-
-    # Submit via sbatch
-    logger.info(f"Submitting SLURM job array ({len(job_lines)} tasks, "
-                f"max {total_licenses} concurrent)...")
-    result = subprocess.run(
-        ["sbatch", script_path],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        logger.error(f"sbatch failed:\n{result.stderr}")
-        sys.exit(result.returncode)
-
-    # Parse job ID from "Submitted batch job 12345678"
-    job_id = result.stdout.strip().split()[-1]
-    logger.info(f"Submitted SLURM job array: {job_id}")
-    logger.info(f"SLURM logs: {slurm_logs_dir}")
-
-    # Poll squeue until all tasks finish
-    logger.info("Polling squeue every 30s until all tasks complete...")
-    while True:
-        time.sleep(30)
-        sq = subprocess.run(
-            ["squeue", "-j", job_id, "--noheader", "-o", "%T"],
-            capture_output=True, text=True,
-        )
-        states = [s.strip() for s in sq.stdout.strip().splitlines() if s.strip()]
-        if not states:
-            logger.info("All SLURM tasks have finished.")
-            break
-        state_counts = Counter(states)
-        logger.info(f"  SLURM tasks: {dict(state_counts)}")
-
-    # Check for failures via sacct
-    sacct = subprocess.run(
-        ["sacct", "-j", job_id, "--format=JobID,State,ExitCode", "--noheader", "-P"],
-        capture_output=True, text=True,
-    )
-    failed_tasks = []
-    for line in sacct.stdout.strip().splitlines():
-        parts = line.split("|")
-        if len(parts) >= 3:
-            task_id, state, exit_code = parts[0], parts[1], parts[2]
-            if state == "FAILED" or (exit_code != "0:0" and "batch" not in task_id
-                                     and "." not in task_id):
-                failed_tasks.append((task_id, state, exit_code))
-
-    if failed_tasks:
-        logger.warning(f"{len(failed_tasks)} task(s) failed:")
-        for task_id, state, exit_code in failed_tasks:
-            logger.warning(f"  {task_id}: {state} (exit {exit_code})")
-        logger.warning(f"Check logs in {slurm_logs_dir}")
-    else:
-        logger.info("All SLURM tasks completed successfully.")
 
 
 def main(args):
@@ -529,8 +322,8 @@ def main(args):
             raise SystemExit("ERROR: --slurm requires --license_config")
         total_licenses, lm_license_file = _load_license_config(args.license_config)
         logger.info(f"SLURM mode: {total_licenses} licenses, LM_LICENSE_FILE={lm_license_file}")
-        _submit_slurm_array(args, run_dir, joblist_path, job_lines, total_licenses,
-                            lm_license_file)
+        job_array.submit(args, run_dir, joblist_path, job_lines, total_licenses,
+                         lm_license_file)
     elif args.license_config:
         # Parallel mode via GNU parallel
         total_licenses, lm_license_file = _load_license_config(args.license_config)
@@ -598,13 +391,8 @@ def create_parser():
     parser.add_argument('--license_config', type=str, default=None, help='Path to license_servers.json. Enables parallel synthesis via GNU parallel.')
     parser.add_argument('--run-single-job', type=str, default=None, metavar='JOB_LINE', help='Run a single synthesis job from a tab-separated job line (used internally by GNU parallel)')
 
-    # SLURM job array options
-    parser.add_argument('--slurm', action='store_true', default=False, help='Use SLURM job array instead of GNU parallel')
-    parser.add_argument('--slurm-account', type=str, default='amsc011', help='NERSC project account (default: amsc011)')
-    parser.add_argument('--slurm-time', type=str, default='02:00:00', help='Walltime per task (default: 02:00:00)')
-    parser.add_argument('--slurm-qos', type=str, default='regular', help='SLURM QOS (default: regular)')
-    parser.add_argument('--slurm-constraint', type=str, default='cpu', help='Node constraint (default: cpu)')
-    parser.add_argument('--collect-slurm', type=str, default=None, metavar='RUN_DIR', help='Skip synthesis, collect reports from a completed SLURM run')
+    # SLURM job array options (defined in slurm/cli.py — see slurm/README.md)
+    slurm_cli.add_slurm_args(parser)
 
     return parser
 
