@@ -29,11 +29,11 @@ if [[ -f "${ENV_FILE}" ]]; then
     set +o allexport
 fi
 
-# Catapult version pinned per Giuseppe's recommendation. Override with
+# Catapult version. Override with
 # CATAPULT_VER=... before invoking this script.
 export CATAPULT_VER="${CATAPULT_VER:-2026.1_1}"
 
-# Path to the Catapult install. siemens.sh defaults to Giuseppe's locked-down
+# Path to the Catapult install. siemens.sh defaults to a path that's locked-down
 # /pscratch/sd/g/gdg/... path which is unreadable to non-`gdg` users; we
 # override to a per-user copy under $SCRATCH (each user must rsync their own
 # copy first — see QUICKSTART.md). Override with CATAPULT_PATH_OVERRIDE=...
@@ -42,7 +42,7 @@ export CATAPULT_PATH_OVERRIDE="${CATAPULT_PATH_OVERRIDE:-${SCRATCH:-/pscratch/sd
 
 # --env-setup picks which env script to source inside the container:
 #   siemens (default, current behavior): ${HOME}/bin/siemens.sh
-#   genesis (proven by Giuseppe):        ${TOOL_CONTAINERS}/envsetup.sh
+#   genesis (project tool-containers):   ${TOOL_CONTAINERS}/envsetup.sh
 ENV_SETUP_MODE="${ENV_SETUP:-siemens}"
 
 SIF="${HOME}/work/tool-containers/catapult_rocky.sif"
@@ -171,7 +171,7 @@ if [[ -n "${TOOL_CONTAINERS:-}" ]]; then
 fi
 
 # After sourcing siemens.sh, re-export CATAPULT_PATH and derived vars so we
-# point at our local 2026.1_1 copy (siemens.sh hardcodes Giuseppe's locked path).
+# point at our local 2026.1_1 copy (siemens.sh hardcodes a locked path).
 # Also re-export LM_LICENSE_FILE / SALT_LICENSE_SERVER (siemens.sh prepends bad
 # 40003@localhost values that prevent license checkout).
 cmd+=(

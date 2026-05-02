@@ -1,7 +1,7 @@
 """Argparse group for the SLURM job array submission flags.
 
 Used by iter_manager_catapult.py to add --slurm and friends to its parser.
-Defaults match Giuseppe's recommended Perlmutter setup for AmSC users.
+Defaults match the recommended Perlmutter setup for AmSC users.
 """
 
 

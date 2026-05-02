@@ -14,7 +14,7 @@ You need:
 1. **NERSC account in `amsc011`**: confirm with `id -nG | tr ' ' '\n' | grep amsc011`
 2. **FNAL Kerberos credentials** — you should be able to `kinit <user>@FNAL.GOV` and SSH to `correlator4.fnal.gov`
 3. **Perlmutter login access** — you can `ssh <user>@perlmutter.nersc.gov`
-4. **`~/bin/siemens.sh`** on Perlmutter — per-user Catapult environment script (CATAPULT_VER, MGC_HOME, etc.). If you don't have one, ask a teammate (Giuseppe / Arghya) to share theirs
+4. **`~/bin/siemens.sh`** on Perlmutter — per-user Catapult environment script (CATAPULT_VER, MGC_HOME, etc.). Step 7 below copies the canonical template (`Perlmutter_scripts/siemens.sh.example`) into place if you don't already have one.
 
 ## One-time setup
 
@@ -105,7 +105,7 @@ The default expected location is `~/work/tool-containers/catapult_rocky.sif`.
 ```bash
 ls -lh ~/work/tool-containers/catapult_rocky.sif
 # Expected: ~1.3 GB file
-# If missing: ask Giuseppe or a teammate to scp/rsync their copy, or
+# If missing: copy from another team member who has one, or
 # (advanced) build from the recipe at:
 #   ~/work/tool-containers/containers/apptainer_catapult_rocky.def
 # Override with `--sif /path/to/catapult_rocky.sif` if your copy lives elsewhere.
@@ -197,4 +197,4 @@ any path works.)
 ## Going further
 
 - **`slurm/README.md`** — internal docs for the SLURM module + an index of every file the SLURM workflow touches
-- **`Perlmutter_scripts/perlmutter_slurm/README.md`** — Giuseppe's reference SLURM tutorials (the submodule), great for learning SLURM patterns beyond this project
+- **`Perlmutter_scripts/perlmutter_slurm/README.md`** — reference SLURM tutorials (the submodule), great for learning SLURM patterns beyond this project
