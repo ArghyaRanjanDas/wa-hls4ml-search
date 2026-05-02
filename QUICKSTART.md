@@ -195,4 +195,3 @@ any path works.)
 
 - **`slurm/README.md`** — internal docs for the SLURM module + an index of every file the SLURM workflow touches
 - **`Perlmutter_scripts/perlmutter_slurm/README.md`** — Giuseppe's reference SLURM tutorials (the submodule), great for learning SLURM patterns beyond this project
-- **`.bot/RUNBOOK.md`** — comprehensive end-to-end guide including the older non-SLURM (correlator4) flow
