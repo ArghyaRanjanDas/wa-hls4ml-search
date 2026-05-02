@@ -4,3 +4,6 @@
 [submodule "docker/xilinx-docker"]
 	path = docker/xilinx-docker
 	url = https://gitlab.com/rjmoss/xilinx-docker.git
+[submodule "Perlmutter_scripts/perlmutter_slurm"]
+	path = Perlmutter_scripts/perlmutter_slurm
+	url = https://github.com/ArghyaRanjanDas/perlmutter_slurm.git
