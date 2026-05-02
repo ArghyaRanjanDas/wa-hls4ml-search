@@ -1,0 +1,33 @@
+# Mentor Siemens Catapult environment for Perlmutter (NERSC) — AmSC project.
+#
+# Copy this template to ~/bin/siemens.sh:
+#   cp Perlmutter_scripts/siemens.sh.example ~/bin/siemens.sh
+# The defaults below assume Catapult 2026.1_1 is at:
+#   $SCRATCH/cad/Siemens/Catapult/2026.1_1/
+# (See QUICKSTART.md step 5 for the rsync command from correlator4.)
+
+export CATAPULT_VER=2026.1_1
+export QUESTASIM_VER=2024.3_4
+
+# Override CATAPULT_PATH if your install lives elsewhere.
+export CATAPULT_PATH="${CATAPULT_PATH:-${SCRATCH:-$HOME}/cad/Siemens/Catapult/${CATAPULT_VER}}"
+export MGC_HOME="${CATAPULT_PATH}/Mgc_home"
+export CATAPULT_HOME="${MGC_HOME}"
+export SYSTEMC="${MGC_HOME}/shared"
+export SYSTEMC_HOME="${SYSTEMC}"
+export LIBDIR="-L${MGC_HOME}/shared/lib ${LIBDIR:-}"
+export LD_LIBRARY_PATH="${MGC_HOME}/lib:${MGC_HOME}/shared/lib:${LD_LIBRARY_PATH:-}"
+
+# QuestaSim path (FNAL-style; usually unused on Perlmutter).
+export MODELTECH="/tools/Siemens/questa_sim/${QUESTASIM_VER}/questasim/bin"
+export MODEL_TECH="${MODELTECH}"
+
+export PATH="${MGC_HOME}/bin:${MODELTECH}:${PATH}"
+
+# License servers — direct connection to FNAL (no SSH tunnel needed; Perlmutter
+# compute nodes have outbound NAT to fasic-135413.fnal.gov:1717 and :40003).
+# CatAIhls4ml_c (105 seats) is what `catapult -product genesis` consumes.
+export LM_LICENSE_FILE="1717@fasic-135413.fnal.gov:${LM_LICENSE_FILE:-}"
+export SALT_LICENSE_SERVER="40003@fasic-135413.fnal.gov"
+
+export PS1="[siemens cat-${CATAPULT_VER}] ${PS1:-}"

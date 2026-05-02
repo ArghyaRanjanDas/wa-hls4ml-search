@@ -90,7 +90,10 @@ cp license_servers_perlmutter.example.json license_servers_perlmutter.json
 ```bash
 grep CATAPULT_VER ~/bin/siemens.sh
 # Expected: export CATAPULT_VER=2026.1_1
-# If missing or older: ask Giuseppe or Arghya for an updated copy
+# If missing or older, copy the template:
+#   cp Perlmutter_scripts/siemens.sh.example ~/bin/siemens.sh
+# Then edit ~/bin/siemens.sh if your install lives somewhere other than
+# $SCRATCH/cad/Siemens/Catapult/2026.1_1/.
 ```
 
 ### 8. Verify the Apptainer container image (`catapult_rocky.sif`) is in place
