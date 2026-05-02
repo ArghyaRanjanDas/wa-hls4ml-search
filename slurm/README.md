@@ -24,7 +24,7 @@ The SLURM driver lives here, but it depends on a few sibling files. For a comple
 | `slurm/job_array.py` (this dir) | Renders `job_array.sh` and submits it. Polls + reports failures. |
 | `slurm/cli.py` (this dir) | argparse group consumed by `iter_manager_catapult.create_parser()` |
 | `Perlmutter_scripts/catapult_shell.sh` | Apptainer wrapper. Each SLURM task runs this inside the container. Sources `~/bin/siemens.sh`, applies `LM_LICENSE_FILE` / `SALT_LICENSE_SERVER` / `CATAPULT_PATH` overrides (because siemens.sh hardcodes broken defaults), invokes `catapult -product genesis -shell` |
-| `Perlmutter_scripts/perlmutter_slurm/` (submodule) | Giuseppe's reference SLURM tutorials (08_array_parallel_catapult is the same-design-N-times pattern; 07_array_parallel shows outer-array + inner-GNU-parallel for true 100-concurrent on the 32-node QoS cap) |
+| `Perlmutter_scripts/perlmutter_slurm/` (submodule) | Reference SLURM tutorials (08_array_parallel_catapult is the same-design-N-times pattern; 07_array_parallel shows outer-array + inner-GNU-parallel for true 100-concurrent on the 32-node QoS cap) |
 | `~/bin/siemens.sh` (per-user, NOT in repo) | Catapult environment setup (CATAPULT_VER, MGC_HOME, etc.) — sourced inside the container by catapult_shell.sh |
 | `license_servers_perlmutter.json` (gitignored, copy from .example) | Per-user license server config: `{"servers": [{"host": "fasic-135413.fnal.gov", "port": 1717, "licenses": 100}]}`. Drives both `LM_LICENSE_FILE` env var and the SLURM array `%total_licenses` throttle. |
 | `$SCRATCH/cad/Siemens/Catapult/2026.1_1/` (per-user) | The Catapult install. Each user rsyncs from correlator4:/data/Siemens/catapult/2026.1_1/ — see QUICKSTART.md. |

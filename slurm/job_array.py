@@ -87,7 +87,7 @@ echo "Task $SLURM_ARRAY_TASK_ID: ${{JOB_LINE}}"
 
 # ---- License: direct connection to FNAL Catapult license server ----
 # Compute nodes can reach this directly via Perlmutter outbound NAT; no SSH
-# tunnels or KRB5 ccache needed (per Giuseppe's proven pattern).
+# tunnels or KRB5 ccache needed.
 export LM_LICENSE_FILE="{lm_license_file}"
 
 # ---- Activate venv and run synthesis ----
