@@ -1,6 +1,6 @@
 """SLURM job array submission for the wa-hls4ml-search Catapult flow.
 
-This package wraps the SLURM-specific orchestration that was extracted from
+This package wraps the SLURM-specific orchestration for
 iter_manager_catapult.py. The synthesis backend (catapult_shell.sh, model
 generation, report collection) lives in the parent module — only the
 job-array submission and CLI flags live here.

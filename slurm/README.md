@@ -1,6 +1,6 @@
 # `slurm/` — SLURM job-array submission for Catapult HLS
 
-This directory contains the SLURM-specific code for running Catapult HLS synthesis at scale on Perlmutter (NERSC). It was extracted from `iter_manager_catapult.py` so reviewers can see the full SLURM surface in one place.
+This directory contains the SLURM-specific code for running Catapult HLS synthesis at scale on Perlmutter (NERSC). The full SLURM surface lives here; the synthesis backend (model generation, `catapult_shell.sh`, report collection) lives in the parent module.
 
 ## What's in here
 
@@ -82,7 +82,7 @@ bash slurm/examples/run_pilot.sh   # 5 toy tasks, ~5 min
 bash slurm/examples/run_single.sh  # 1 real model, ~10-30 min
 ```
 
-## Reviewer notes
+## Notes
 
 - **Code surface**: ~135 lines (`job_array.py` + `cli.py`). `iter_manager_catapult.py`'s synthesis-phase branch (3-way: SLURM / GNU parallel / sequential) calls into here only for the SLURM path.
 - **`express_amsc` QoS cap**: `GrpTRES=node=32` — caps concurrent array tasks at 32 nodes total across the AmSC group.

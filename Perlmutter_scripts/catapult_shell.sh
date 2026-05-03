@@ -33,7 +33,7 @@ fi
 # CATAPULT_VER=... before invoking this script.
 export CATAPULT_VER="${CATAPULT_VER:-2026.1_1}"
 
-# Path to the Catapult install. siemens.sh defaults to a path that's locked-down
+# Path to the Catapult install. siemens.sh defaults to a locked-down
 # /pscratch/sd/g/gdg/... path which is unreadable to non-`gdg` users; we
 # override to a per-user copy under $SCRATCH (each user must rsync their own
 # copy first — see QUICKSTART.md). Override with CATAPULT_PATH_OVERRIDE=...
