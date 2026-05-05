@@ -171,48 +171,55 @@ def _run_catapult_flow(hls_dir, shell_script=None, flow_tcl=None, cfg_json=None)
     )
 
 
-def _collect_reports(run_dir):
-    """Parse all completed builds in run_dir and create report JSONs + tarballs."""
-    build_root = os.path.join(run_dir, "build")
+def _process_single_build(catapult_dir, run_dir):
+    """Parse report and create tarball for one completed synthesis.
+
+    Idempotent: skips steps whose output files already exist.
+    Returns True if the report was successfully parsed (or already existed).
+    """
+    tag = os.path.basename(os.path.dirname(catapult_dir))
     raw_report_dir = os.path.join(run_dir, "data", "reports", "raw")
     tar_dir = os.path.join(run_dir, "tarballs")
-
     os.makedirs(raw_report_dir, exist_ok=True)
     os.makedirs(tar_dir, exist_ok=True)
 
-    logger.info("Collecting synthesis reports...")
-    build_dirs = sorted(glob.glob(os.path.join(build_root, "*", "catapult_native")))
-    parsed_count = 0
-    for catapult_dir in build_dirs:
-        tag = os.path.basename(os.path.dirname(catapult_dir))
-        raw_json_path = os.path.join(raw_report_dir, f"{tag}.json")
+    raw_json_path = os.path.join(raw_report_dir, f"{tag}.json")
+    tar_path = os.path.join(tar_dir, f"{tag}.tar.gz")
 
-        if os.path.exists(raw_json_path):
-            logger.info(f"Report already exists for {tag}, skipping.")
-            parsed_count += 1
-            continue
-
+    if not os.path.exists(raw_json_path):
         report = parse_catapult_report(catapult_dir)
         if report is None:
             logger.warning(f"Failed to parse report for {tag}")
-            continue
-
+            return False
         with open(raw_json_path, "w") as f:
             json.dump(report, f, indent=2)
+        logger.info(f"Saved report for {tag} → {raw_json_path}")
 
+    if not os.path.exists(tar_path):
         model_json_path = os.path.join(os.path.dirname(catapult_dir), "model.json")
-        tar_path = os.path.join(tar_dir, f"{tag}.tar.gz")
         _make_tarfile(
             tar_path,
             catapult_dir,
             extra_files=[(model_json_path, "model.json"), (raw_json_path, "report.json")],
             exclude_dirs=["SIF"],
         )
-
-        parsed_count += 1
-        logger.info(f"Saved report for {tag} → {raw_json_path}")
         logger.info(f"Tarball: {tar_path}")
 
+    return True
+
+
+def _collect_reports(run_dir):
+    """Parse all completed builds in run_dir and create report JSONs + tarballs.
+
+    Skips builds already processed on compute nodes (both files will exist).
+    """
+    build_root = os.path.join(run_dir, "build")
+    logger.info("Collecting synthesis reports...")
+    build_dirs = sorted(glob.glob(os.path.join(build_root, "*", "catapult_native")))
+    parsed_count = sum(
+        _process_single_build(catapult_dir, run_dir) for catapult_dir in build_dirs
+    )
+    raw_report_dir = os.path.join(run_dir, "data", "reports", "raw")
     logger.info(f"Collected {parsed_count}/{len(build_dirs)} reports to {raw_report_dir}")
 
 
@@ -409,6 +416,10 @@ if __name__ == "__main__":
         job_kwargs = _parse_job_line(args.run_single_job)
         logger.info(f"Running single job: {job_kwargs['hls_dir']}")
         _run_catapult_flow(**job_kwargs)
+        hls_dir = os.path.abspath(job_kwargs['hls_dir'])
+        run_dir = os.path.dirname(os.path.dirname(hls_dir))
+        catapult_dir = os.path.join(hls_dir, "catapult_native")
+        _process_single_build(catapult_dir, run_dir)
     else:
         main(args)
 
