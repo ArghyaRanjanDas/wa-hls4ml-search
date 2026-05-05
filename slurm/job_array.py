@@ -20,8 +20,35 @@ from collections import Counter
 logger = logging.getLogger(__name__)
 
 
+def _lm_assignment_bash(servers, parallelism):
+    """Return bash snippet that sets JOB_LM based on GLOBAL_IDX.
+
+    Jobs are assigned to servers in order: first server gets jobs 0..c1-1,
+    second gets c1..c1+c2-1, etc. Each synthesis sets its own LM_LICENSE_FILE
+    so separate pools are used independently.
+    """
+    if len(servers) == 1:
+        lm = f"{servers[0]['port']}@{servers[0]['host']}"
+        return f'    JOB_LM="{lm}"'
+
+    lines = ['    GLOBAL_IDX=$(( SLURM_ARRAY_TASK_ID * ' + str(parallelism) + ' + local_idx ))']
+    cumulative = 0
+    for i, s in enumerate(servers):
+        lm = f"{s['port']}@{s['host']}"
+        cumulative += s['licenses']
+        if i == 0:
+            lines.append(f'    if (( GLOBAL_IDX < {cumulative} )); then')
+        elif i < len(servers) - 1:
+            lines.append(f'    elif (( GLOBAL_IDX < {cumulative} )); then')
+        else:
+            lines.append(f'    else')
+        lines.append(f'        JOB_LM="{lm}"')
+    lines.append('    fi')
+    return '\n'.join(lines)
+
+
 def write_script(run_dir, joblist_path, total_licenses, lm_license_file,
-                 output_dir, args):
+                 output_dir, args, servers=None):
     """Write {run_dir}/job_array.sh for SLURM job array submission.
 
     Each array task gets one compute node, sets LM_LICENSE_FILE directly to
@@ -59,6 +86,12 @@ def write_script(run_dir, joblist_path, total_licenses, lm_license_file,
     mem_per_job = getattr(args, 'slurm_mem_per_job', '32G')
     mem_per_job_gb = int(mem_per_job.rstrip('Gg'))
 
+    if servers is None:
+        servers = [{"host": lm_license_file.split("@")[1],
+                    "port": lm_license_file.split("@")[0],
+                    "licenses": total_licenses}]
+    lm_assignment = _lm_assignment_bash(servers, parallelism)
+
     n_arrays = math.ceil(n_jobs / parallelism)
     total_cpus = parallelism * cpus_per_job
     total_mem_gb = parallelism * mem_per_job_gb
@@ -90,17 +123,16 @@ if [[ ${{#JOB_LINES[@]}} -eq 0 ]]; then
 fi
 echo "Task $SLURM_ARRAY_TASK_ID: ${{#JOB_LINES[@]}} synthesis job(s) (lines ${{START}}-${{END}})"
 
-# ---- License: direct connection to FNAL Catapult license server ----
-# Compute nodes can reach this directly via Perlmutter outbound NAT; no SSH
-# tunnels or KRB5 ccache needed.
-export LM_LICENSE_FILE="{lm_license_file}"
-
 # ---- Activate venv and run syntheses in parallel ----
+# Each synthesis gets its own LM_LICENSE_FILE to distribute across server pools.
 source "{venv_activate}"
 pids=()
+local_idx=0
 for JOB_LINE in "${{JOB_LINES[@]}}"; do
-    python "{script_path}" -o "{output_dir}" --run-single-job "${{JOB_LINE}}" &
+{lm_assignment}
+    LM_LICENSE_FILE="$JOB_LM" python "{script_path}" -o "{output_dir}" --run-single-job "${{JOB_LINE}}" &
     pids+=($!)
+    local_idx=$(( local_idx + 1 ))
 done
 failed=0
 for pid in "${{pids[@]}}"; do
@@ -121,7 +153,7 @@ fi
 
 
 def submit(args, run_dir, joblist_path, job_lines, total_licenses,
-           lm_license_file):
+           lm_license_file, servers=None):
     """Write job_array.sh, submit via sbatch, poll until done, report failures.
 
     Args:
@@ -131,6 +163,8 @@ def submit(args, run_dir, joblist_path, job_lines, total_licenses,
         job_lines:       List of joblist lines (just used for the count log).
         total_licenses:  Concurrency cap for the array.
         lm_license_file: FlexLM license-server string.
+        servers:         List of {"host", "port", "licenses"} dicts for per-pool
+                         assignment. If None, all jobs use lm_license_file.
     """
     # Create slurm_logs directory
     slurm_logs_dir = os.path.join(run_dir, "slurm_logs")
@@ -139,6 +173,7 @@ def submit(args, run_dir, joblist_path, job_lines, total_licenses,
     # Write job_array.sh
     script_path = write_script(
         run_dir, joblist_path, total_licenses, lm_license_file, args.output, args,
+        servers=servers,
     )
 
     # Submit via sbatch

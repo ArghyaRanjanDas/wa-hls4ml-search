@@ -61,8 +61,9 @@ def _load_license_config(path):
     }
 
     Returns:
-        tuple: (total_licenses: int, lm_license_file: str)
+        tuple: (total_licenses: int, lm_license_file: str, servers: list)
                lm_license_file is in FlexLM format: "port@host1:port@host2:..."
+               servers is the raw list of {"host", "port", "licenses"} dicts.
     """
     with open(path, "r") as f:
         cfg = json.load(f)
@@ -78,7 +79,7 @@ def _load_license_config(path):
     if total_licenses <= 0:
         raise ValueError(f"Total licenses must be > 0, got {total_licenses}")
 
-    return total_licenses, lm_license_file
+    return total_licenses, lm_license_file, servers
 
 
 def _make_tarfile(output_path, source_dir, extra_files=None, exclude_dirs=None):
@@ -320,13 +321,13 @@ def main(args):
         # SLURM job array mode
         if not args.license_config:
             raise SystemExit("ERROR: --slurm requires --license_config")
-        total_licenses, lm_license_file = _load_license_config(args.license_config)
+        total_licenses, lm_license_file, servers = _load_license_config(args.license_config)
         logger.info(f"SLURM mode: {total_licenses} licenses, LM_LICENSE_FILE={lm_license_file}")
         job_array.submit(args, run_dir, joblist_path, job_lines, total_licenses,
-                         lm_license_file)
+                         lm_license_file, servers)
     elif args.license_config:
         # Parallel mode via GNU parallel
-        total_licenses, lm_license_file = _load_license_config(args.license_config)
+        total_licenses, lm_license_file, servers = _load_license_config(args.license_config)
         logger.info(f"Parallel mode: {total_licenses} licenses, LM_LICENSE_FILE={lm_license_file}")
 
         env = os.environ.copy()
