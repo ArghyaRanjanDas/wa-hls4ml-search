@@ -10,6 +10,7 @@ QUICKSTART.md for the prerequisite Perlmutter setup.
 """
 
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -53,46 +54,62 @@ def write_script(run_dir, joblist_path, total_licenses, lm_license_file,
         os.path.join(os.environ.get("SCRATCH", ""), "venv_hls4ml", "bin", "activate"),
     )
 
-    # Build the --run-single-job invocation. shell_script/flow_tcl/cfg_json
-    # come from JOB_LINE itself (set by _format_job_line in the prepare phase),
-    # so we don't pass --catapult_shell or --flow_tcl here — they'd be ignored.
-    single_job_cmd = (
-        f'python "{script_path}" -o "{output_dir}" '
-        f'--run-single-job "${{JOB_LINE}}"'
-    )
+    parallelism = getattr(args, 'slurm_parallelism', 1)
+    cpus_per_job = getattr(args, 'slurm_cpus_per_job', 2)
+    mem_per_job = getattr(args, 'slurm_mem_per_job', '32G')
+    mem_per_job_gb = int(mem_per_job.rstrip('Gg'))
+
+    n_arrays = math.ceil(n_jobs / parallelism)
+    total_cpus = parallelism * cpus_per_job
+    total_mem_gb = parallelism * mem_per_job_gb
+    concurrent_arrays = max(1, total_licenses // parallelism)
 
     script_content = f"""#!/bin/bash
 #SBATCH --job-name=catapult_hls4ml
 #SBATCH --account={args.slurm_account}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task={total_cpus}
+#SBATCH --mem={total_mem_gb}G
 #SBATCH --constraint={args.slurm_constraint}
 #SBATCH --time={args.slurm_time}
 #SBATCH --qos={args.slurm_qos}
-#SBATCH --array=0-{n_jobs - 1}%{total_licenses}
+#SBATCH --array=0-{n_arrays - 1}%{concurrent_arrays}
 #SBATCH --output={run_dir}/slurm_logs/task_%a.out
 #SBATCH --error={run_dir}/slurm_logs/task_%a.err
 
 set -euo pipefail
 
-# ---- Read job line for this array task ----
-JOB_LINE=$(sed -n "$(($SLURM_ARRAY_TASK_ID + 1))p" "{joblist_path}")
-if [[ -z "${{JOB_LINE}}" ]]; then
-    echo "ERROR: no job line for SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID" >&2
+# ---- Read job lines for this array task ({parallelism} per node) ----
+START=$(( SLURM_ARRAY_TASK_ID * {parallelism} + 1 ))
+END=$(( START + {parallelism} - 1 ))
+mapfile -t JOB_LINES < <(sed -n "${{START}},${{END}}p" "{joblist_path}")
+if [[ ${{#JOB_LINES[@]}} -eq 0 ]]; then
+    echo "ERROR: no job lines for SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID" >&2
     exit 1
 fi
-echo "Task $SLURM_ARRAY_TASK_ID: ${{JOB_LINE}}"
+echo "Task $SLURM_ARRAY_TASK_ID: ${{#JOB_LINES[@]}} synthesis job(s) (lines ${{START}}-${{END}})"
 
 # ---- License: direct connection to FNAL Catapult license server ----
 # Compute nodes can reach this directly via Perlmutter outbound NAT; no SSH
 # tunnels or KRB5 ccache needed.
 export LM_LICENSE_FILE="{lm_license_file}"
 
-# ---- Activate venv and run synthesis ----
+# ---- Activate venv and run syntheses in parallel ----
 source "{venv_activate}"
-{single_job_cmd}
+pids=()
+for JOB_LINE in "${{JOB_LINES[@]}}"; do
+    python "{script_path}" -o "{output_dir}" --run-single-job "${{JOB_LINE}}" &
+    pids+=($!)
+done
+failed=0
+for pid in "${{pids[@]}}"; do
+    wait "$pid" || failed=$(( failed + 1 ))
+done
+if [[ $failed -gt 0 ]]; then
+    echo "ERROR: $failed synthesis job(s) failed" >&2
+    exit 1
+fi
 """
 
     script_path_out = os.path.join(run_dir, "job_array.sh")

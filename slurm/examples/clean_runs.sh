@@ -1,15 +1,15 @@
 #!/bin/bash
-# Remove run directories from $SCRATCH/catapult_runs.
+# Remove run directories from all catapult output dirs under $SCRATCH.
+# Covers: catapult_runs, catapult_pilot, catapult_scale_toy, catapult_scale.
 # By default does a dry run — pass --confirm to actually delete.
 # Run from anywhere: bash slurm/examples/clean_runs.sh [--confirm] [--keep N]
 #
 # Options:
 #   --confirm      Actually delete (default is dry run)
-#   --keep N       Keep the N most recent runs (default: 0, delete all)
+#   --keep N       Keep the N most recent runs across all dirs (default: 0, delete all)
 
 set -euo pipefail
 
-RUNS_DIR="${SCRATCH}/catapult_runs"
 CONFIRM=0
 KEEP=0
 
@@ -21,17 +21,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ! -d "$RUNS_DIR" ]]; then
-    echo "Nothing to clean: $RUNS_DIR does not exist."
-    exit 0
-fi
-
-# List runs sorted newest-first
-mapfile -t ALL_RUNS < <(ls -1dt "$RUNS_DIR"/run_* 2>/dev/null)
+# Collect all run_* dirs across all catapult_* output dirs, newest-first
+mapfile -t ALL_RUNS < <(ls -1dt "$SCRATCH"/catapult_*/run_* 2>/dev/null)
 
 TOTAL=${#ALL_RUNS[@]}
 if [[ $TOTAL -eq 0 ]]; then
-    echo "No runs found in $RUNS_DIR."
+    echo "No runs found under $SCRATCH/catapult_*/"
     exit 0
 fi
 
@@ -43,7 +38,7 @@ fi
 
 TO_DELETE=("${ALL_RUNS[@]:$KEEP}")
 
-echo "Found $TOTAL run(s) in $RUNS_DIR"
+echo "Found $TOTAL run(s) under $SCRATCH/catapult_*/"
 echo "Keeping $KEEP most recent, deleting $((TOTAL - KEEP)):"
 for d in "${TO_DELETE[@]}"; do
     SIZE=$(du -sh "$d" 2>/dev/null | cut -f1)

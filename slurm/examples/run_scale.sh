@@ -13,5 +13,6 @@ python iter_manager_catapult.py \
   --license_config license_servers_perlmutter.json        $(: license server config) \
   --flow_config_json config_catapult_flow.json            $(: HLS flow parameters) \
   --gen_model_config_json config_dense_latency_fast.json  $(: real models to synthesize — 20-40 min each) \
-  --batch_range 1 --batch_size 100                        $(: run batch 1, 100 tasks) \
-  --slurm --slurm-qos express_amsc --slurm-time 02:00:00  $(: SLURM array, express_amsc QoS, 2 hr walltime)
+  --batch_range 1 --batch_size 200                        $(: run batch 1, 200 tasks) \
+  --slurm --slurm-qos express_amsc --slurm-time 02:00:00  $(: SLURM array, express_amsc QoS, 2 hr walltime) \
+  --slurm-parallelism 16 --slurm-mem-per-job 16G          $(: 16 syntheses per node, 16G RAM each = 256G per node)
