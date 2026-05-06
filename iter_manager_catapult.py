@@ -111,7 +111,7 @@ def _make_run_dir(output_root):
     return run_dir
 
 
-def _generate_models(batch_range, batch_size, config_params_arg, output_dir):
+def _generate_models(batch_range, batch_size, config_params_arg, output_dir, cartesian=False):
     os.makedirs(output_dir, exist_ok=True)
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     gen_models_script = os.path.join(repo_dir, "gen_models.py")
@@ -119,13 +119,18 @@ def _generate_models(batch_range, batch_size, config_params_arg, output_dir):
     cmd = [
         "python",
         gen_models_script,
-        "--batch_range",
-        str(batch_range),
-        "--batch_size",
-        str(batch_size),
         "--output_dir",
         output_dir,
     ]
+
+    if cartesian:
+        cmd.append("--cartesian")
+        logger.info(f"Generating models via subprocess (cartesian): output_dir={output_dir}")
+    else:
+        cmd += ["--batch_range", str(batch_range), "--batch_size", str(batch_size)]
+        logger.info(
+            f"Generating models via subprocess: batch_range={batch_range}, batch_size={batch_size}, output_dir={output_dir}"
+        )
 
     if config_params_arg:
         if not os.path.isfile(config_params_arg):
@@ -135,9 +140,6 @@ def _generate_models(batch_range, batch_size, config_params_arg, output_dir):
         cmd.extend(["--config", config_params_arg])
         logger.info(f"Loaded configuration from {config_params_arg}")
 
-    logger.info(
-        f"Generating models via subprocess: batch_range={batch_range}, batch_size={batch_size}, output_dir={output_dir}"
-    )
     subprocess.run(cmd, check=True)
 
 def _run_catapult_flow(hls_dir, shell_script=None, flow_tcl=None, cfg_json=None):
@@ -246,7 +248,8 @@ def main(args):
     os.makedirs(tar_dir, exist_ok=True)
     os.makedirs(build_root, exist_ok=True)
 
-    _generate_models(args.batch_range, args.batch_size, args.gen_model_config_json, generated_models_dir)
+    _generate_models(args.batch_range, args.batch_size, args.gen_model_config_json, generated_models_dir,
+                     cartesian=args.cartesian)
 
     batch_files = sorted(glob.glob(os.path.join(generated_models_dir, "dense_latency_fast_batch_*.json")))
     assert batch_files, f"[ERROR] No generated batch JSON files found in {generated_models_dir}"
@@ -398,6 +401,8 @@ def create_parser():
     parser.add_argument('--flow_config_json', type=str, default=None, help='Path to CatapultDataflowConfig JSON')
     parser.add_argument('--license_config', type=str, default=None, help='Path to license_servers.json. Enables parallel synthesis via GNU parallel.')
     parser.add_argument('--run-single-job', type=str, default=None, metavar='JOB_LINE', help='Run a single synthesis job from a tab-separated job line (used internally by GNU parallel)')
+    parser.add_argument('--cartesian', action='store_true',
+        help='Enumerate the full Cartesian product of the design space instead of random sampling')
 
     # SLURM job array options (defined in slurm/cli.py — see slurm/README.md)
     slurm_cli.add_slurm_args(parser)
