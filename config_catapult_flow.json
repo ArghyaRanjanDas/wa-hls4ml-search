@@ -43,5 +43,6 @@
   "write_weights_txt": 1,
   "write_tar": 0,
 
-  "min_fifo_depth": 16
+  "min_fifo_depth": 16,
+  "BramFactor": 0
 }
