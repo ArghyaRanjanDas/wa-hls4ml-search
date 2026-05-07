@@ -192,6 +192,12 @@ def submit(args, run_dir, joblist_path, job_lines, total_licenses,
     logger.info(f"Submitted SLURM job array: {job_id}")
     logger.info(f"SLURM logs: {slurm_logs_dir}")
 
+    # Persist job ID so check_failures.sh can query sacct without knowing it
+    jobid_path = os.path.join(run_dir, "slurm_job_id.txt")
+    with open(jobid_path, "w") as f:
+        f.write(job_id + "\n")
+    logger.info(f"Job ID saved: {jobid_path}")
+
     # Poll squeue until all tasks finish
     logger.info("Polling squeue every 30s until all tasks complete...")
     while True:

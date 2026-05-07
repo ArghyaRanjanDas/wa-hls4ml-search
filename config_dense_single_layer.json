@@ -1,0 +1,15 @@
+{
+    "input_lb": 4,
+    "input_ub": 32,
+    "output_lb": 4,
+    "output_ub": 32,
+    "bitwidth_lb": 4,
+    "bitwidth_ub": 12,
+
+    "weight_int_width": 2,
+    "activ_int_width": 2,
+
+    "probs": {
+        "activations": [1, 1, 1, 0]
+    }
+}
