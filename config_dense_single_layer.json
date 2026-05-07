@@ -1,8 +1,8 @@
 {
     "input_lb": 4,
-    "input_ub": 32,
+    "input_ub": 64,
     "output_lb": 4,
-    "output_ub": 32,
+    "output_ub": 64,
     "bitwidth_lb": 4,
     "bitwidth_ub": 12,
 
