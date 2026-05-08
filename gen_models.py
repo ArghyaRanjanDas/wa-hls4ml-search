@@ -513,9 +513,11 @@ def cartesian_exec(config_params, output_dir, chunk_size=1000):
     """Enumerate every unique dense-NN configuration and write batch JSON files.
 
     Dispatches on config keys:
-    - 'input_lb'/'output_lb' present → single-layer mode: independent input/output sizes,
-      even bitwidths in [bitwidth_lb, bitwidth_ub].
-    - otherwise → multi-layer mode: coupled sizes, power-of-2 bitwidths up to max_bit_width_po2.
+    - 'layers' present → general mode: independent input size + per-layer independent
+      sizes and activations, even bitwidths in [bitwidth_lb, bitwidth_ub].
+      Single-layer is a special case with one entry in 'layers'.
+    - otherwise → legacy multi-layer mode: coupled sizes, power-of-2 bitwidths
+      up to max_bit_width_po2 (supports config_dense_1to3layers.json style).
     """
     import itertools
 
@@ -524,26 +526,36 @@ def cartesian_exec(config_params, output_dir, chunk_size=1000):
         ["relu", "tanh", "sigmoid", "softmax"],
     )
 
-    if 'input_lb' in config_params:
-        # Single-layer mode: independent input/output sizes
-        input_sizes  = _dense_sizes(config_params['input_lb'],  config_params['input_ub'])
-        output_sizes = _dense_sizes(config_params['output_lb'], config_params['output_ub'])
-        bitwidths    = list(range(config_params['bitwidth_lb'], config_params['bitwidth_ub'] + 1, 2))
-        all_combos   = list(itertools.product(input_sizes, output_sizes, activs, bitwidths))
-        logger.info(f"Cartesian (single-layer): {len(all_combos)} designs "
-                    f"({len(input_sizes)} in × {len(output_sizes)} out × "
-                    f"{len(activs)} act × {len(bitwidths)} bw)")
+    if 'layers' in config_params:
+        # General mode: independent input size, per-layer independent sizes
+        input_sizes = _dense_sizes(config_params['input_lb'], config_params['input_ub'])
+        bitwidths   = (config_params['bitwidths'] if 'bitwidths' in config_params
+                       else list(range(config_params['bitwidth_lb'], config_params['bitwidth_ub'] + 1, 2)))
+        n_layers    = len(config_params['layers'])
+
+        layer_options = [
+            list(itertools.product(_dense_sizes(l['size_lb'], l['size_ub']), activs))
+            for l in config_params['layers']
+        ]
+        all_combos = list(itertools.product(input_sizes, *layer_options, bitwidths))
+        logger.info(f"Cartesian ({n_layers}-layer): {len(all_combos)} designs "
+                    f"({len(input_sizes)} in"
+                    + "".join(f" × {len(lo)} layer{i+1}" for i, lo in enumerate(layer_options))
+                    + f" × {len(bitwidths)} bw)")
 
         model_dict, batch_i, total = {}, 0, 0
-        for idx, (in_size, out_size, activ, bitwidth) in enumerate(tqdm(all_combos, desc="Building models")):
-            model = _build_dense_model([(out_size, activ)], bitwidth, config_params, input_size=in_size)
-            model_dict[f"dense_single_{idx}"] = model.to_json()
+        for idx, combo in enumerate(tqdm(all_combos, desc="Building models")):
+            in_size      = combo[0]
+            layer_configs = list(combo[1:-1])
+            bitwidth     = combo[-1]
+            model = _build_dense_model(layer_configs, bitwidth, config_params, input_size=in_size)
+            model_dict[f"dense_{n_layers}l_{idx}"] = model.to_json()
             total += 1
             if len(model_dict) >= chunk_size:
                 _write_batch(model_dict, output_dir, batch_i)
                 model_dict, batch_i = {}, batch_i + 1
     else:
-        # Multi-layer mode: coupled sizes, power-of-2 bitwidths
+        # Legacy multi-layer mode: coupled sizes, power-of-2 bitwidths
         sizes     = _dense_sizes(config_params['dense_lb'], config_params['dense_ub'])
         bitwidths = [2**i for i in range(2, config_params['max_bit_width_po2'] + 1)]
         n_min     = config_params['min_layer_count']
@@ -556,7 +568,7 @@ def cartesian_exec(config_params, output_dir, chunk_size=1000):
             for combo in itertools.product(layer_choices, repeat=n_layers)
             for bitwidth in bitwidths
         ]
-        logger.info(f"Cartesian (multi-layer): {len(all_combos)} designs total")
+        logger.info(f"Cartesian (legacy multi-layer): {len(all_combos)} designs total")
 
         model_dict, batch_i, total = {}, 0, 0
         for idx, (layer_config, bitwidth) in enumerate(tqdm(all_combos, desc="Building models")):
