@@ -23,27 +23,49 @@ logger = logging.getLogger(__name__)
 def _lm_assignment_bash(servers, parallelism):
     """Return bash snippet that sets JOB_LM based on GLOBAL_IDX.
 
-    Jobs are assigned to servers in order: first server gets jobs 0..c1-1,
-    second gets c1..c1+c2-1, etc. Each synthesis sets its own LM_LICENSE_FILE
-    so separate pools are used independently.
+    When all servers have equal license counts, jobs are distributed round-robin
+    (GLOBAL_IDX % N) so the load is spread evenly regardless of total job count.
+    When counts differ, jobs are assigned by cumulative threshold (first server
+    gets jobs 0..c1-1, second gets c1..c1+c2-1, etc.).
+    Each synthesis sets its own LM_LICENSE_FILE so pools are used independently.
     """
     if len(servers) == 1:
         lm = f"{servers[0]['port']}@{servers[0]['host']}"
         return f'    JOB_LM="{lm}"'
 
+    n = len(servers)
+    equal_counts = len(set(s['licenses'] for s in servers)) == 1
+
     lines = ['    GLOBAL_IDX=$(( SLURM_ARRAY_TASK_ID * ' + str(parallelism) + ' + local_idx ))']
-    cumulative = 0
-    for i, s in enumerate(servers):
-        lm = f"{s['port']}@{s['host']}"
-        cumulative += s['licenses']
-        if i == 0:
-            lines.append(f'    if (( GLOBAL_IDX < {cumulative} )); then')
-        elif i < len(servers) - 1:
-            lines.append(f'    elif (( GLOBAL_IDX < {cumulative} )); then')
-        else:
-            lines.append(f'    else')
-        lines.append(f'        JOB_LM="{lm}"')
-    lines.append('    fi')
+
+    if equal_counts:
+        # Round-robin: spread jobs evenly across all servers
+        lines.append(f'    SERVER_IDX=$(( GLOBAL_IDX % {n} ))')
+        for i, s in enumerate(servers):
+            lm = f"{s['port']}@{s['host']}"
+            if i == 0:
+                lines.append(f'    if (( SERVER_IDX == {i} )); then')
+            elif i < n - 1:
+                lines.append(f'    elif (( SERVER_IDX == {i} )); then')
+            else:
+                lines.append(f'    else')
+            lines.append(f'        JOB_LM="{lm}"')
+        lines.append('    fi')
+    else:
+        # Threshold-based: assign by cumulative license count
+        cumulative = 0
+        for i, s in enumerate(servers):
+            lm = f"{s['port']}@{s['host']}"
+            cumulative += s['licenses']
+            if i == 0:
+                lines.append(f'    if (( GLOBAL_IDX < {cumulative} )); then')
+            elif i < n - 1:
+                lines.append(f'    elif (( GLOBAL_IDX < {cumulative} )); then')
+            else:
+                lines.append(f'    else')
+            lines.append(f'        JOB_LM="{lm}"')
+        lines.append('    fi')
+
     return '\n'.join(lines)
 
 
