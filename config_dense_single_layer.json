@@ -4,7 +4,7 @@
     "layers": [
         {"size_lb": 4, "size_ub": 64}
     ],
-    "bitwidths": [4, 8, 12],
+    "bitwidths": [4, 6, 8, 10, 12],
 
     "weight_int_width": 2,
     "activ_int_width": 2,
