@@ -64,8 +64,9 @@ fi
 
 case "$answer" in
     [yY][eE][sS]|[yY])
-        echo "Removing $RUN_DIR ..."
-        rm -rf "$RUN_DIR"
+        echo "Removing $RUN_DIR (via compute node)..."
+        srun -C cpu -q interactive -t 00:30:00 -N 1 \
+            bash -c "find '$RUN_DIR' -type f -print0 | xargs -0 -P 64 rm -f && find '$RUN_DIR' -depth -type d -empty -delete"
         echo "Removed."
         ;;
     *)
