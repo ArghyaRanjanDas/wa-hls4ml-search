@@ -5,6 +5,7 @@ import glob
 import sys
 import uuid
 import tarfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from tensorflow.keras.models import model_from_json
 from qkeras.utils import _add_supported_quantized_objects
@@ -225,6 +226,34 @@ def _collect_reports(run_dir):
     logger.info(f"Collected {parsed_count}/{len(build_dirs)} reports to {raw_report_dir}")
 
 
+def _prepare_single_model(task):
+    model_name, model_desc, data_models, build_root, base_cfg, shell_script, flow_tcl, co = task
+    tag = model_name
+    tag_data_dir = os.path.abspath(os.path.join(data_models, tag))
+    tag_build_dir = os.path.abspath(os.path.join(build_root, tag))
+    os.makedirs(tag_data_dir, exist_ok=True)
+    os.makedirs(tag_build_dir, exist_ok=True)
+
+    model = model_from_json(model_desc, custom_objects=co)
+    h5_data = os.path.join(tag_data_dir, "keras_model.h5")
+    model.save(h5_data, include_optimizer=False)
+
+    with open(os.path.join(tag_build_dir, "model.json"), "w") as f:
+        f.write(model_desc)
+    shutil.copy2(h5_data, os.path.join(tag_build_dir, "keras_model.h5"))
+
+    cfg = base_cfg.override(output_dir=os.path.join(tag_build_dir, "catapult_native"))
+    cfg_json_path = os.path.join(tag_data_dir, "dataflow_config.json")
+    cfg.save_json(cfg_json_path)
+
+    return _format_job_line(
+        hls_dir=tag_build_dir,
+        shell_script=shell_script,
+        flow_tcl=flow_tcl,
+        cfg_json=cfg_json_path,
+    )
+
+
 def main(args):
     os.makedirs(args.output, exist_ok=True)
     run_dir = _make_run_dir(args.output)
@@ -267,6 +296,7 @@ def main(args):
 
     co = {}
     _add_supported_quantized_objects(co)
+    n_workers = min(16, os.cpu_count() or 8)
     for batch_file in batch_files:
         print(f"Found JSON File, loading: {batch_file}")
 
@@ -277,47 +307,15 @@ def main(args):
 
         with open(batch_file, "r") as file:
             models = json.load(file)
-            print(f"[INFO] Loaded {len(models)} models from {batch_file}")
+        print(f"[INFO] Preparing {len(models)} models in parallel (workers={n_workers})...")
 
-        for model_name, model_desc in models.items():
-            tag = model_name
-            model = model_from_json(model_desc, custom_objects=co)
-
-            # Portable artifacts
-            tag_data_dir = os.path.abspath(os.path.join(data_models, tag))
-            os.makedirs(tag_data_dir, exist_ok=True)
-
-            # Build artifacts (Catapult project)
-            tag_build_dir = os.path.abspath(os.path.join(build_root, tag))
-            os.makedirs(tag_build_dir, exist_ok=True)
-
-            print(f"[INFO] TAG={tag}")
-            print(f"[INFO] data:  {tag_data_dir}")
-            print(f"[INFO] build: {tag_build_dir}")
-
-            h5_data = os.path.join(tag_data_dir, "keras_model.h5")
-            model.save(h5_data, include_optimizer=False)
-
-            model_json_path = os.path.join(tag_build_dir, "model.json")
-            with open(model_json_path, "w") as f:
-                f.write(model_desc)
-
-            # Copy .h5 into build dir for Catapult
-            h5_build = os.path.join(tag_build_dir, "keras_model.h5")
-            shutil.copy2(h5_data, h5_build)
-
-            cfg = base_cfg.override(
-                output_dir=os.path.join(tag_build_dir, "catapult_native"),
-            )
-            cfg_json_path = os.path.join(tag_data_dir, "dataflow_config.json")
-            cfg.save_json(cfg_json_path)
-
-            job_lines.append(_format_job_line(
-                hls_dir=tag_build_dir,
-                shell_script=args.catapult_shell,
-                flow_tcl=args.flow_tcl,
-                cfg_json=cfg_json_path,
-            ))
+        tasks = [
+            (name, desc, data_models, build_root, base_cfg,
+             args.catapult_shell, args.flow_tcl, co)
+            for name, desc in models.items()
+        ]
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            job_lines.extend(executor.map(_prepare_single_model, tasks))
 
 
     # Write joblist (for both parallel and sequential runs)
