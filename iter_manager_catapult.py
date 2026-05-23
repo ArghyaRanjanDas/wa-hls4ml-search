@@ -438,10 +438,15 @@ if __name__ == "__main__":
         sys.exit(0)
     elif args.run_single_job is not None:
         job_kwargs = _parse_job_line(args.run_single_job)
-        logger.info(f"Running single job: {job_kwargs['hls_dir']}")
-        _run_catapult_flow(**job_kwargs)
         hls_dir = os.path.abspath(job_kwargs['hls_dir'])
         run_dir = os.path.dirname(os.path.dirname(hls_dir))
+        tag = os.path.basename(hls_dir)
+        tar_path = os.path.join(run_dir, "tarballs", f"{tag}.tar.gz")
+        if os.path.exists(tar_path):
+            logger.info(f"Already done (tarball exists): {tar_path}")
+            sys.exit(0)
+        logger.info(f"Running single job: {hls_dir}")
+        _run_catapult_flow(**job_kwargs)
         catapult_dir = os.path.join(hls_dir, "catapult_native")
         _process_single_build(catapult_dir, run_dir)
     else:

@@ -30,10 +30,9 @@ print(':'.join(f\"{s['port']}@{s['host']}\" for s in cfg['servers']))
 
 wait_for_job() {
     local jid="$1"
-    echo "  Waiting for SLURM job $jid (sacct, every 60s)..."
-    sleep 15
-    until ! sacct -j "$jid" --format=State --noheader -P 2>/dev/null \
-          | grep -qE "^(RUNNING|PENDING|COMPLETING)$"; do
+    echo "  Waiting for SLURM job $jid (squeue, every 60s)..."
+    sleep 30
+    while squeue -j "$jid" -h 2>/dev/null | grep -q .; do
         sleep 60
     done
     local states
@@ -76,7 +75,7 @@ run_group() {
     echo "=== sz64 ${label} ==="
 
     local run_dir
-    run_dir=$(ls -d "${base}"/run_*/ 2>/dev/null | sort | tail -1)
+    run_dir=$(ls -d "${base}"/run_*/ 2>/dev/null | sort | tail -1 || true)
     run_dir="${run_dir%/}"
 
     if [[ -z "$run_dir" || ! -f "${run_dir}/joblist.txt" ]]; then
@@ -89,7 +88,7 @@ run_group() {
             --cartesian \
             --prepare-only
 
-        run_dir=$(ls -d "${base}"/run_*/ 2>/dev/null | sort | tail -1)
+        run_dir=$(ls -d "${base}"/run_*/ 2>/dev/null | sort | tail -1 || true)
         run_dir="${run_dir%/}"
     else
         echo "  Reusing: $run_dir"
@@ -147,9 +146,9 @@ SBATCH_EOF
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 run_group l3_rf1  config_dense_3layers_sz64_l3.json config_catapult_flow_rf1.json
-run_group l3_rf4  config_dense_3layers_sz64_l3.json config_catapult_flow_rf4.json
-run_group l3_rf8  config_dense_3layers_sz64_l3.json config_catapult_flow_rf8.json
-run_group l3_rf16 config_dense_3layers_sz64_l3.json config_catapult_flow.json
+#run_group l3_rf4  config_dense_3layers_sz64_l3.json config_catapult_flow_rf4.json
+#run_group l3_rf8  config_dense_3layers_sz64_l3.json config_catapult_flow_rf8.json
+#run_group l3_rf16 config_dense_3layers_sz64_l3.json config_catapult_flow.json
 
 echo ""
 echo "All l3 batches done."
