@@ -11,7 +11,7 @@
 set -euo pipefail
 
 PARALLELISM=100
-SLURM_TIME=48:00:00
+SLURM_TIME=04:00:00
 SLURM_ACCOUNT=amsc011
 SLURM_QOS=express_amsc
 SLURM_CONSTRAINT=cpu
@@ -45,28 +45,27 @@ resume_if_incomplete() {
     local run_dir="$1"
     local joblist="${run_dir}/joblist.txt"
     local tar_dir="${run_dir}/tarballs"
-    local total done
+    local total done max_rounds=20 round=0
 
     total=$(wc -l < "$joblist")
     done=$(ls "${tar_dir}"/*.tar.gz 2>/dev/null | wc -l)
+
+    while (( done < total && round < max_rounds )); do
+        round=$(( round + 1 ))
+        echo "  Incomplete: $done/$total — re-submitting (round $round/$max_rounds)..."
+        local jid
+        jid=$(sbatch --parsable "${run_dir}/parallel_synth.sh")
+        echo "  Submitted: $jid"
+        wait_for_job "$jid"
+        done=$(ls "${tar_dir}"/*.tar.gz 2>/dev/null | wc -l)
+    done
 
     if (( done >= total )); then
         echo "  Complete ($done/$total)."
         return 0
     fi
-
-    echo "  Incomplete: $done/$total — re-submitting with --resume-failed..."
-    local jid
-    jid=$(sbatch --parsable "${run_dir}/parallel_synth.sh")
-    echo "  Re-submitted: $jid"
-    wait_for_job "$jid"
-
-    done=$(ls "${tar_dir}"/*.tar.gz 2>/dev/null | wc -l)
-    if (( done < total )); then
-        echo "  ERROR: still incomplete after resume ($done/$total)" >&2
-        return 1
-    fi
-    echo "  Resume complete: $done/$total."
+    echo "  ERROR: still incomplete after $max_rounds rounds ($done/$total)" >&2
+    return 1
 }
 
 run_group() {
