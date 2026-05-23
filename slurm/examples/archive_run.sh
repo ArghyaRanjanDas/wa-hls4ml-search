@@ -2,14 +2,28 @@
 # Copy reports and tarballs from a run to the shared archive.
 # Safe to run mid-run or multiple times — partial tarballs are replaced when
 # complete, already-copied reports are skipped.
-# Usage: bash slurm/examples/archive_run.sh <run_dir>
+# Usage: bash slurm/examples/archive_run.sh <run_dir> [--yes]
+#
+# --yes  Skip the interactive prompt and remove scratch data automatically
+#        (only when archive counts are fully verified).
 #
 # Example:
 #   bash slurm/examples/archive_run.sh $SCRATCH/catapult_dense_1to3layers/run_20260504_205339_a5d590d6
+#   bash slurm/examples/archive_run.sh $SCRATCH/.../run_... --yes
 
 set -euo pipefail
 
-RUN_DIR=${1:?Usage: $0 <run_dir>}
+RUN_DIR=""
+AUTO_YES=0
+for arg in "$@"; do
+    case "$arg" in
+        --yes|-y) AUTO_YES=1 ;;
+        -*) echo "ERROR: unknown flag $arg" >&2; exit 1 ;;
+        *)  RUN_DIR="$arg" ;;
+    esac
+done
+[ -n "$RUN_DIR" ] || { echo "Usage: $0 <run_dir> [--yes]" >&2; exit 1; }
+
 ARCHIVE_ROOT="/global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult"
 
 RUN_NAME=$(basename "$RUN_DIR")
@@ -53,24 +67,23 @@ fi
 echo "  ✅ All $JOBS designs verified in archive."
 echo ""
 
-# ── Offer to remove scratch data ─────────────────────────────────────────────
-if [ -t 0 ]; then
+# ── Remove scratch data ───────────────────────────────────────────────────────
+_do_remove() {
+    echo "Removing $RUN_DIR..."
+    find "$RUN_DIR" -type f -print0 | xargs -0 -P 64 rm -f
+    find "$RUN_DIR" -depth -type d -empty -delete
+    echo "Removed."
+}
+
+if [ "$AUTO_YES" -eq 1 ]; then
+    _do_remove
+elif [ -t 0 ]; then
     read -r -p "Remove scratch data at $RUN_DIR? [y/N] " answer
+    case "$answer" in
+        [yY][eE][sS]|[yY]) _do_remove ;;
+        *) echo "Skipped. To remove manually: rm -rf $RUN_DIR" ;;
+    esac
 else
     echo "Non-interactive mode — skipping scratch removal. Run manually:"
     echo "  rm -rf $RUN_DIR"
-    exit 0
 fi
-
-case "$answer" in
-    [yY][eE][sS]|[yY])
-        echo "Removing $RUN_DIR (via compute node)..."
-        srun -C cpu -q interactive -t 00:30:00 -N 1 \
-            bash -c "find '$RUN_DIR' -type f -print0 | xargs -0 -P 64 rm -f && find '$RUN_DIR' -depth -type d -empty -delete"
-        echo "Removed."
-        ;;
-    *)
-        echo "Skipped. To remove manually:"
-        echo "  rm -rf $RUN_DIR"
-        ;;
-esac
