@@ -1,22 +1,34 @@
 #!/bin/bash
 # sz64 inp group: input=64, l1/l2/l3 ∈ {4,8,16,32,64}
-#
-# Split into 8 batches: 4 RF values × 2 l1-size ranges
+# 8 batches: 4 RF values × 2 l1-size ranges
 #   l1a: l1 ∈ {4,8,16,32} → 16,200 designs/batch
 #   l1b: l1 = 64          →  4,050 designs/batch
 #
-# Architecture: separate model-generation (--prepare-only, fast) from synthesis
-# (GNU parallel inside a SLURM batch job, 100 concurrent Catapult processes).
-# This eliminates per-round synchronization barriers so the 100 licenses stay
-# continuously busy until the batch is done.
+# ── Two-level scheduling ──────────────────────────────────────────────────────
+# This script is an ORCHESTRATOR: it loops over RF groups, submitting one
+# synthesis batch job at a time (express_amsc, 5.5 h, 100 Catapult slots) and
+# waiting for it to finish before moving to the next.  The orchestrator itself
+# uses almost no CPU — it just polls squeue every 60 s.
 #
-# If the SLURM job times out, re-run the script — it will reuse the existing
-# run_dir and joblist and re-submit with --resume-failed (skips done designs).
+# PREFERRED — submit the orchestrator as a shared batch job (2 CPUs, 48 h):
 #
-# Run from repo root on an interactive CPU node:
+#   REPO=/global/u2/g/gdg/research/projects/genesis/wa-hls4ml-paper/wa-hls4ml-search
+#   sbatch --job-name=orch_sz64_inp --account=amsc011 \
+#     --ntasks=1 --cpus-per-task=2 --mem=16G --constraint=cpu \
+#     --time=48:00:00 --qos=shared \
+#     --output=$SCRATCH/orch_sz64_inp.out --error=$SCRATCH/orch_sz64_inp.err \
+#     --wrap="source \$SCRATCH/venv_hls4ml/bin/activate && \
+#             cd $REPO && bash slurm/examples/run_dense_3layers_sz64_inp.sh"
+#
+# ALTERNATIVE — run interactively (session must outlive all rounds, ~86 h):
 #   salloc -N 1 -C cpu --qos=interactive -t 4:00:00 -A amsc011
 #   source $SCRATCH/venv_hls4ml/bin/activate
 #   bash slurm/examples/run_dense_3layers_sz64_inp.sh
+#
+# Crash recovery: re-submitting the same command always resumes from where it
+# left off — existing run dirs and completed tarballs are reused automatically.
+# Run ONE group at a time to stay within the 100-license limit.
+# ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
 
