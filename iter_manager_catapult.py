@@ -337,6 +337,12 @@ def main(args):
         jf.write("\n".join(job_lines) + "\n")
     logger.info(f"Wrote {len(job_lines)} jobs to {joblist_path}")
 
+    if args.prepare_only:
+        logger.info("--prepare-only: model generation complete, exiting before synthesis.")
+        logger.info(f"Run dir : {run_dir}")
+        logger.info(f"Joblist : {joblist_path} ({len(job_lines)} jobs)")
+        return
+
     # --- Synthesis phase ---
     if args.slurm:
         # SLURM job array mode
@@ -414,6 +420,8 @@ def create_parser():
     parser.add_argument('--run-single-job', type=str, default=None, metavar='JOB_LINE', help='Run a single synthesis job from a tab-separated job line (used internally by GNU parallel)')
     parser.add_argument('--cartesian', action='store_true',
         help='Enumerate the full Cartesian product of the design space instead of random sampling')
+    parser.add_argument('--prepare-only', action='store_true',
+        help='Generate models and write joblist.txt, then exit without running synthesis.')
 
     # SLURM job array options (defined in slurm/cli.py — see slurm/README.md)
     slurm_cli.add_slurm_args(parser)
