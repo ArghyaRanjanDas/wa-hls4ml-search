@@ -23,7 +23,7 @@ set -euo pipefail
 PARALLELISM=100
 SLURM_TIME=48:00:00
 SLURM_ACCOUNT=amsc011
-SLURM_QOS=regular
+SLURM_QOS=express_amsc
 SLURM_CONSTRAINT=cpu
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
