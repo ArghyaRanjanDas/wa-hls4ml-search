@@ -146,9 +146,9 @@ SBATCH_EOF
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 run_group l3_rf1  config_dense_3layers_sz64_l3.json config_catapult_flow_rf1.json
-#run_group l3_rf4  config_dense_3layers_sz64_l3.json config_catapult_flow_rf4.json
-#run_group l3_rf8  config_dense_3layers_sz64_l3.json config_catapult_flow_rf8.json
-#run_group l3_rf16 config_dense_3layers_sz64_l3.json config_catapult_flow.json
+run_group l3_rf4  config_dense_3layers_sz64_l3.json config_catapult_flow_rf4.json
+run_group l3_rf8  config_dense_3layers_sz64_l3.json config_catapult_flow_rf8.json
+run_group l3_rf16 config_dense_3layers_sz64_l3.json config_catapult_flow.json
 
 echo ""
 echo "All l3 batches done."
