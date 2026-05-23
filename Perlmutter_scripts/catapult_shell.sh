@@ -154,12 +154,13 @@ if [[ -n "${LM_LICENSE_FILE:-}" ]]; then
     # siemens.sh prepends "40003@localhost:" to LM_LICENSE_FILE and sets
     # SALT_LICENSE_SERVER=40003@localhost. Both target a non-existent local
     # daemon (was a tunnel in the old setup), causing mgls_errno=515.
-    # Derive SALT_LICENSE_SERVER from the same host as LM_LICENSE_FILE.
+    # Derive SALT_LICENSE_SERVER from the same port@host as LM_LICENSE_FILE.
+    _LF_PORT="${LM_LICENSE_FILE%%@*}"
     _LF_HOST="${LM_LICENSE_FILE#*@}"
     _LF_HOST="${_LF_HOST%%:*}"
     cmd+=(--env "LM_LICENSE_FILE=${LM_LICENSE_FILE}")
     cmd+=(--env "LM_LICENSE_FILE_OVERRIDE=${LM_LICENSE_FILE}")
-    cmd+=(--env "SALT_LICENSE_SERVER_OVERRIDE=40003@${_LF_HOST}")
+    cmd+=(--env "SALT_LICENSE_SERVER_OVERRIDE=${_LF_PORT}@${_LF_HOST}")
 fi
 
 # Propagate CATAPULT_VER + TOOL_CONTAINERS + CATAPULT_PATH_OVERRIDE into the
@@ -192,4 +193,4 @@ if (( DRY_RUN == 1 )); then
     exit 0
 fi
 
-sg amsc011 -c "LD_LIBRARY_PATH=$(printf '%q' "${LD_LIBRARY_PATH:-}") $(printf '%q ' "${cmd[@]}")"
+env LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" "${cmd[@]}"

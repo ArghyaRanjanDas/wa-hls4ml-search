@@ -154,24 +154,37 @@ def _run_catapult_flow(hls_dir, shell_script=None, flow_tcl=None, cfg_json=None)
     if cfg_json is None:
         cfg_json = ""
 
-    # Full control comes from cfg_json (CatapultDataflowConfig).
-    tcl_cmd = (
-        f"set model_path {{{hls_dir_abs}/keras_model.h5}}; "
-        f"set out_dir {{{hls_dir_abs}/catapult_native}}; "
-        f"set cfg_json {{{cfg_json}}}; "
-        "set run_synth 1; "
-        f"dofile {{{flow_tcl}}}; exit"
-    )
+    # Write TCL commands to a file to avoid shell quoting issues with --cmd.
+    tcl_script = os.path.join(hls_dir_abs, "_run.tcl")
+    with open(tcl_script, "w") as f:
+        f.write(f"set model_path {{{hls_dir_abs}/keras_model.h5}}\n")
+        f.write(f"set out_dir {{{hls_dir_abs}/catapult_native}}\n")
+        f.write(f"set cfg_json {{{cfg_json}}}\n")
+        f.write("set run_synth 1\n")
+        f.write("set auto_exit 0\n")
+        f.write(f"dofile {{{flow_tcl}}}\n")
 
-    subprocess.run(
-        [
-            shell_script,
-            "--work-dir", hls_dir_abs,
-            "--cmd", tcl_cmd,
-        ],
-        cwd=hls_dir_abs,
-        check=True,
-    )
+    import random, time
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(
+            [
+                shell_script,
+                "--work-dir", hls_dir_abs,
+                "--cmd", f"source {{{tcl_script}}}; exit",
+            ],
+            cwd=hls_dir_abs,
+        )
+        if result.returncode == 0:
+            return
+        wait = random.uniform(30, 90) * attempt
+        if attempt < max_attempts:
+            logger.warning(
+                f"Catapult exited with code {result.returncode} "
+                f"(attempt {attempt}/{max_attempts}), retrying in {wait:.0f}s..."
+            )
+            time.sleep(wait)
+    raise subprocess.CalledProcessError(result.returncode, result.args)
 
 
 def _process_single_build(catapult_dir, run_dir):
