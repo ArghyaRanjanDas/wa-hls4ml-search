@@ -208,6 +208,10 @@ dataset
 **/catapult.log
 **/iter_manager.log
 
+# SLURM job output files (generated in repo root by sbatch)
+slurm-*.out
+slurm-*.err
+
 # Large generated datasets/artifacts (keep repo code/docs focused)
 /compressed_pregen_models/
 /conv1d_models/
