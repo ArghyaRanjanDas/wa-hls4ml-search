@@ -34,21 +34,40 @@ echo "Archiving $RUN_NAME → $DEST"
 mkdir -p "$DEST/reports" "$DEST/tarballs"
 echo "$RUN_DIR" > "$DEST/source_dir.txt"
 
-rsync -a --info=progress2 --ignore-existing \
-    "$RUN_DIR/data/reports/raw/" "$DEST/reports/"
+# Reports: tar pipe is much faster than rsync for thousands of small JSON files
+# on Lustre (CFS). Only copies files not already in the destination.
+SRC_REPORTS="$RUN_DIR/data/reports/raw"
+DEST_REPORTS="$DEST/reports"
+if [ -d "$SRC_REPORTS" ]; then
+    total_src=$(find "$SRC_REPORTS" -maxdepth 1 -name "*.json" | wc -l)
+    if [ "$total_src" -gt 0 ]; then
+        already=$(find "$DEST_REPORTS" -maxdepth 1 -name "*.json" 2>/dev/null | wc -l)
+        if [ "$already" -lt "$total_src" ]; then
+            echo "  Copying reports via tar ($already already present, $total_src total)..."
+            # Build list of missing files and copy only those; use find to avoid ARG_MAX
+            comm -23 \
+                <(find "$SRC_REPORTS"  -maxdepth 1 -name "*.json" -printf '%f\n' | sort) \
+                <(find "$DEST_REPORTS" -maxdepth 1 -name "*.json" -printf '%f\n' 2>/dev/null | sort) \
+            | (cd "$SRC_REPORTS" && tar cf - -T /dev/stdin) \
+            | tar xf - -C "$DEST_REPORTS"
+        else
+            echo "  Reports already up to date ($already files)."
+        fi
+    fi
+fi
 
 rsync -a --info=progress2 --size-only \
     "$RUN_DIR/tarballs/" "$DEST/tarballs/"
 
 echo "Done. Archived to $DEST"
-echo "  Reports: $(ls "$DEST/reports" | wc -l) files"
-echo "  Tarballs: $(ls "$DEST/tarballs" | wc -l) files"
+echo "  Reports: $(find "$DEST/reports" -maxdepth 1 -name "*.json" | wc -l) files"
+echo "  Tarballs: $(find "$DEST/tarballs" -maxdepth 1 -name "*.tar.gz" | wc -l) files"
 
 # ── Verify archive completeness before offering to clean scratch ─────────────
 JOBS=$(wc -l < "$RUN_DIR/joblist.txt" 2>/dev/null || echo 0)
-SCRATCH_TARBALLS=$(ls "$RUN_DIR/tarballs/" 2>/dev/null | wc -l)
-ARCH_TARBALLS=$(ls "$DEST/tarballs/" 2>/dev/null | wc -l)
-ARCH_REPORTS=$(ls "$DEST/reports/" 2>/dev/null | wc -l)
+SCRATCH_TARBALLS=$(find "$RUN_DIR/tarballs" -maxdepth 1 -name "*.tar.gz" 2>/dev/null | wc -l)
+ARCH_TARBALLS=$(find "$DEST/tarballs" -maxdepth 1 -name "*.tar.gz" 2>/dev/null | wc -l)
+ARCH_REPORTS=$(find "$DEST/reports" -maxdepth 1 -name "*.json" 2>/dev/null | wc -l)
 
 echo ""
 echo "Verification:"
