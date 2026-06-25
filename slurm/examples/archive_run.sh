@@ -15,16 +15,27 @@ set -euo pipefail
 
 RUN_DIR=""
 AUTO_YES=0
+TECH_OVERRIDE=""
 for arg in "$@"; do
     case "$arg" in
-        --yes|-y) AUTO_YES=1 ;;
-        -*) echo "ERROR: unknown flag $arg" >&2; exit 1 ;;
-        *)  RUN_DIR="$arg" ;;
+        --yes|-y)   AUTO_YES=1 ;;
+        --tech=*)   TECH_OVERRIDE="${arg#--tech=}" ;;
+        --tech)     shift; TECH_OVERRIDE="$1" ;;
+        -*)         echo "ERROR: unknown flag $arg" >&2; exit 1 ;;
+        *)          RUN_DIR="$arg" ;;
     esac
 done
-[ -n "$RUN_DIR" ] || { echo "Usage: $0 <run_dir> [--yes]" >&2; exit 1; }
+[ -n "$RUN_DIR" ] || { echo "Usage: $0 <run_dir> [--yes] [--tech nangate45|gf22fdx]" >&2; exit 1; }
 
-ARCHIVE_ROOT="/global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult"
+ARCHIVE_BASE="/global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult"
+
+if [ -n "$TECH_OVERRIDE" ]; then
+    ARCHIVE_ROOT="$ARCHIVE_BASE/$TECH_OVERRIDE"
+elif [[ "$RUN_DIR" == *"/catapult_gf22"* ]]; then
+    ARCHIVE_ROOT="$ARCHIVE_BASE/gf22fdx"
+else
+    ARCHIVE_ROOT="$ARCHIVE_BASE/nangate45"
+fi
 
 RUN_NAME=$(basename "$RUN_DIR")
 DEST="$ARCHIVE_ROOT/$RUN_NAME"
