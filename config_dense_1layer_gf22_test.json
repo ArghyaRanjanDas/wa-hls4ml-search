@@ -1,0 +1,13 @@
+{
+    "input_lb": 8,
+    "input_ub": 8,
+    "layers": [
+        {"size_lb": 8, "size_ub": 8}
+    ],
+    "bitwidths": [8],
+    "weight_int_width": 2,
+    "activ_int_width": 2,
+    "probs": {
+        "activations": [1, 0, 0, 0]
+    }
+}
