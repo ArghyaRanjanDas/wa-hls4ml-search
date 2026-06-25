@@ -215,6 +215,11 @@ node_history.csv
 catapult_native/
 data-cards/
 
+# Editor artifacts
+*.swp
+*.swo
+*~
+
 # Large generated datasets/artifacts (keep repo code/docs focused)
 /compressed_pregen_models/
 /conv1d_models/
