@@ -49,8 +49,8 @@ for rf in rf1 rf4 rf8 rf16; do
   echo "=== bw=4-12  RF=${rf} ==="
   python iter_manager_catapult.py \
     -o "${SCRATCH}/catapult_gf22_1layer_${rf}" \
-    --flow_config_json "config_catapult_flow_gf22_${rf}.json" \
-    --gen_model_config_json config_dense_single_layer.json \
+    --flow_config_json "configs/catapult_flow/config_catapult_flow_gf22_${rf}.json" \
+    --gen_model_config_json configs/model_sweeps/config_dense_single_layer.json \
     "${COMMON[@]}"
 done
 
@@ -59,8 +59,8 @@ for rf in rf1 rf4 rf8 rf16; do
   echo "=== bw=14  RF=${rf} ==="
   python iter_manager_catapult.py \
     -o "${SCRATCH}/catapult_gf22_1layer_bw14_${rf}" \
-    --flow_config_json "config_catapult_flow_gf22_${rf}.json" \
-    --gen_model_config_json config_dense_single_layer_bw14.json \
+    --flow_config_json "configs/catapult_flow/config_catapult_flow_gf22_${rf}.json" \
+    --gen_model_config_json configs/model_sweeps/config_dense_single_layer_bw14.json \
     "${COMMON[@]}"
 done
 

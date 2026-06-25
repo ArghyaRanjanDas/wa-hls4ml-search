@@ -1,16 +1,21 @@
 #!/bin/bash
-#SBATCH --job-name=orch_sz64_inp_e
+#SBATCH --job-name=orch_inp_rf16_l1b
 #SBATCH --account=amsc011
 #SBATCH --qos=shared
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=16G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=8G
 #SBATCH --time=2-00:00:00
 #SBATCH --constraint=cpu
-# sz64 inp — Node E: RF=4 (l1a+l1b) + RF=8 (l1a+l1b)
-# Part of 2-node parallel run (D: RF=1+16, E: RF=4+8).
-# Submit alongside node_d to use 200 licenses simultaneously.
+#SBATCH --output=%x_%j.out
+#SBATCH --error=%x_%j.err
+#
+# Standalone orchestrator for sz64 inp RF=16 l1b (l1=64, 4050 designs).
+# Runs in parallel with orch_sz64_inp_rec which handles RF=16 l1a.
+#
+# IMPORTANT: scancel orch_sz64_inp_rec (54034764) before it reaches
+# run_group inp_rf16_l1b to avoid duplicate synthesis.
 
 set -euo pipefail
 
@@ -23,6 +28,7 @@ SLURM_CONSTRAINT=cpu
 REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 VENV="${WA_HLS4ML_VENV:-${SCRATCH}/venv_hls4ml/bin/activate}"
 source "$VENV"
+cd "$REPO_DIR"
 
 LM_LICENSE_FILE=$(python3 -c "
 import json
@@ -30,8 +36,6 @@ with open('${REPO_DIR}/license_servers_perlmutter.json') as f:
     cfg = json.load(f)
 print(':'.join(f\"{s['port']}@{s['host']}\" for s in cfg['servers']))
 ")
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 wait_for_job() {
     local jid="$1"
@@ -61,15 +65,17 @@ resume_if_incomplete() {
         jid=$(sbatch --parsable "${run_dir}/parallel_synth.sh")
         echo "  Submitted: $jid"
         wait_for_job "$jid"
+        local prev=$done
         done=$(find "${tar_dir}" -maxdepth 1 -name "*.tar.gz" 2>/dev/null | wc -l)
+        (( done == prev )) && { echo "  No progress — aborting retries"; break; }
     done
 
     if (( done >= total )); then
         echo "  Complete ($done/$total)."
         return 0
     fi
-    echo "  ERROR: still incomplete after $max_rounds rounds ($done/$total)" >&2
-    return 1
+    echo "  WARNING: $done/$total after $round rounds ($(( total - done )) hard failures)"
+    return 0
 }
 
 run_group() {
@@ -148,13 +154,7 @@ SBATCH_EOF
     echo "  Done: ${label}."
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-run_group inp_rf4_l1a configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow_rf4.json
-run_group inp_rf4_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow_rf4.json
-
-run_group inp_rf8_l1a configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow_rf8.json
-run_group inp_rf8_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow_rf8.json
+run_group inp_rf16_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow.json
 
 echo ""
-echo "Node E done (RF=4 + RF=8)."
+echo "inp RF=16 l1b complete."

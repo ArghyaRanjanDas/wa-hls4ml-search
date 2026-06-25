@@ -29,14 +29,14 @@ for GROUP in inp l1 l2 l3; do
     echo "=== Group ${GROUP} ==="
     for RF in 1 4 8 16; do
         if [ "$RF" -eq 16 ]; then
-            FLOW_CFG=config_catapult_flow.json
+            FLOW_CFG=configs/catapult_flow/config_catapult_flow.json
         else
-            FLOW_CFG=config_catapult_flow_rf${RF}.json
+            FLOW_CFG=configs/catapult_flow/config_catapult_flow_rf${RF}.json
         fi
         echo "  RF=${RF}"
         python iter_manager_catapult.py \
           -o "$SCRATCH/catapult_dense_3layers_sz32_${GROUP}_rf${RF}" \
-          --gen_model_config_json "config_dense_3layers_sz32_${GROUP}.json" \
+          --gen_model_config_json "configs/model_sweeps/config_dense_3layers_sz32_${GROUP}.json" \
           --flow_config_json "$FLOW_CFG" \
           "${COMMON_ARGS[@]}"
     done

@@ -12,6 +12,6 @@ python iter_manager_catapult.py \
   --catapult_shell Perlmutter_scripts/catapult_shell.sh     $(: Apptainer wrapper that launches Catapult) \
   --flow_tcl util/catapult_hls4ml_flow.tcl                  $(: TCL script that drives HLS synthesis) \
   --license_config license_servers_perlmutter.json          $(: license server config) \
-  --flow_config_json config_catapult_flow.json              $(: HLS flow parameters, includes BramFactor=0) \
-  --gen_model_config_json config_bram_test_large.json            $(: fixed model: 2 dense layers, 128 neurons, relu, 8-bit) \
+  --flow_config_json configs/catapult_flow/config_catapult_flow.json              $(: HLS flow parameters, includes BramFactor=0) \
+  --gen_model_config_json configs/model_sweeps/config_bram_test_large.json            $(: fixed model: 2 dense layers, 128 neurons, relu, 8-bit) \
   --batch_range 1 --batch_size 1                            $(: single model, no SLURM)

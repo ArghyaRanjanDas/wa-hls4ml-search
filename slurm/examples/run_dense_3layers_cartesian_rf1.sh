@@ -12,8 +12,8 @@ python iter_manager_catapult.py \
   --catapult_shell Perlmutter_scripts/catapult_shell.sh                 \
   --flow_tcl      util/catapult_hls4ml_flow.tcl                        \
   --license_config license_servers_perlmutter.json                     \
-  --flow_config_json config_catapult_flow_rf1.json                     \
-  --gen_model_config_json config_dense_3layers.json                    \
+  --flow_config_json configs/catapult_flow/config_catapult_flow_rf1.json                     \
+  --gen_model_config_json configs/model_sweeps/config_dense_3layers.json                    \
   --cartesian                                                           \
   --slurm --slurm-qos express_amsc --slurm-time 06:00:00              \
   --slurm-parallelism 16 --slurm-mem-per-job 16G

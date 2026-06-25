@@ -47,8 +47,8 @@ if [ -z "$RUN_DIR" ]; then
     echo "  No run dir found — running fresh via iter_manager"
     python iter_manager_catapult.py \
       -o "$BASE" \
-      --gen_model_config_json "config_dense_3layers_sz32_inp.json" \
-      --flow_config_json "config_catapult_flow_rf8.json" \
+      --gen_model_config_json "configs/model_sweeps/config_dense_3layers_sz32_inp.json" \
+      --flow_config_json "configs/catapult_flow/config_catapult_flow_rf8.json" \
       "${COMMON_ARGS[@]}"
 else
     JOBLIST="${RUN_DIR}joblist.txt"
@@ -104,14 +104,14 @@ for GROUP in inp l1 l2 l3; do
         [ "$GROUP" = "inp" ] && [ "$RF" -ne 16 ] && continue
 
         if [ "$RF" -eq 16 ]; then
-            FLOW_CFG=config_catapult_flow.json
+            FLOW_CFG=configs/catapult_flow/config_catapult_flow.json
         else
-            FLOW_CFG=config_catapult_flow_rf${RF}.json
+            FLOW_CFG=configs/catapult_flow/config_catapult_flow_rf${RF}.json
         fi
         echo "=== ${GROUP} RF=${RF} ==="
         python iter_manager_catapult.py \
           -o "$SCRATCH/catapult_dense_3layers_sz32_${GROUP}_rf${RF}" \
-          --gen_model_config_json "config_dense_3layers_sz32_${GROUP}.json" \
+          --gen_model_config_json "configs/model_sweeps/config_dense_3layers_sz32_${GROUP}.json" \
           --flow_config_json "$FLOW_CFG" \
           "${COMMON_ARGS[@]}"
         echo "  Archiving ${GROUP} RF=${RF}..."

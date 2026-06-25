@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gf22_nlayer_lhs
+#SBATCH --job-name=gf22_2layer_lhs
 #SBATCH --account=amsc011
 #SBATCH --qos=shared
 #SBATCH --nodes=1
@@ -8,26 +8,20 @@
 #SBATCH --mem=16G
 #SBATCH --constraint=cpu
 #SBATCH --time=2-00:00:00
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
+#SBATCH --output=%x_%j.out
+#SBATCH --error=%x_%j.err
 #
-# GF22nm LHS sweep for N-layer dense networks, extracting models from the 45nm archive.
-# RF=1, 4, 8, 16; each group uses 3 nodes × 100 parallel slots (300 licenses).
-# Archives flat to gf22fdx/.
+# GF22nm synthesis for 2-layer dense networks selected by LHS from the 45nm archive.
+# Runs 4 RF values sequentially; each group archives itself on completion.
 #
 # Usage:
-#   N_LAYERS=2 sbatch slurm/examples/submit_gf22_nlayer_lhs.sh
-#   N_LAYERS=3 sbatch slurm/examples/submit_gf22_nlayer_lhs.sh
-#   N_LAYERS=3 N_LHS=10000 EXCLUDE_FILE=/path/to/prev.txt sbatch ...
+#   sbatch slurm/examples/submit_gf22_2layer_lhs.sh
 #
 # Optional env vars:
-#   N_LHS          number of LHS samples (default: 5000)
-#   EXCLUDE_FILE   path to a previous candidates file to exclude (run_name<TAB>stem)
-#   CANDIDATES     override path to candidates file
+#   CANDIDATES   path to candidates file (default: auto-generated, 5000 designs)
+#   N_LHS        number of LHS samples (default: 5000, used only if generating candidates)
 
 set -euo pipefail
-
-: "${N_LAYERS:?ERROR: N_LAYERS must be set (e.g. N_LAYERS=2 or N_LAYERS=3)}"
 
 REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 VENV="${WA_HLS4ML_VENV:-${SCRATCH}/venv_hls4ml/bin/activate}"
@@ -38,10 +32,10 @@ ARCHIVE_BASE="/global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult"
 ARCHIVE_45NM="${ARCHIVE_BASE}/nangate45"
 ARCHIVE_GF22NM="${ARCHIVE_BASE}/gf22fdx"
 N_LHS="${N_LHS:-5000}"
-CANDIDATES="${CANDIDATES:-${ARCHIVE_GF22NM}/gf22_lhs_${N_LAYERS}layer_${N_LHS}.txt}"
-EXCLUDE_FILE="${EXCLUDE_FILE:-}"
+CANDIDATES="${CANDIDATES:-${ARCHIVE_GF22NM}/gf22_lhs_2layer_${N_LHS}.txt}"
+EXCLUDE_FILE="${EXCLUDE_FILE:-}"   # optional: path to a prior-pass candidates file
 
-PARALLELISM=100
+PARALLELISM=100   # per node; 2 nodes submitted per RF group → 200 total
 SLURM_TIME=05:30:00
 SLURM_ACCOUNT=amsc011
 SLURM_QOS=express_amsc
@@ -54,16 +48,14 @@ with open('${REPO_DIR}/license_servers_perlmutter.json') as f:
 print(':'.join(f\"{s['port']}@{s['host']}\" for s in cfg['servers']))
 ")
 
-# ── Step 1: Generate LHS candidates from 45nm archive ────────────────────────
+# ── Step 1: generate LHS candidates ──────────────────────────────────────────
 
 if [ ! -f "$CANDIDATES" ]; then
-    echo "=== Generating LHS candidates (N=${N_LHS}, ${N_LAYERS}-layer) ==="
-    exclude_arg=""
-    [ -n "$EXCLUDE_FILE" ] && exclude_arg="--exclude ${EXCLUDE_FILE}"
+    echo "=== Generating LHS candidates (N=${N_LHS}) ==="
+    EXCLUDE_ARG=""
+    [ -n "$EXCLUDE_FILE" ] && EXCLUDE_ARG="--exclude ${EXCLUDE_FILE}"
     python3 "${REPO_DIR}/slurm/examples/sample_lhs_from_archive.py" \
-        --layers "$N_LAYERS" --n "$N_LHS" \
-        $exclude_arg \
-        --out "$CANDIDATES"
+        --layers 2 --n "$N_LHS" --out "$CANDIDATES" $EXCLUDE_ARG
 else
     echo "=== Using existing candidates file ==="
 fi
@@ -71,6 +63,8 @@ echo "Candidates: $(wc -l < "$CANDIDATES") designs at $CANDIDATES"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Wait for one or more SLURM jobs; print tarball count every 5 min.
+# Usage: wait_for_jobs TAR_DIR JID [JID ...]
 wait_for_jobs() {
     local tar_dir="$1"; shift
     local jids=("$@")
@@ -97,15 +91,15 @@ wait_for_jobs() {
     done
 }
 
-# ── Step 2: For each RF, extract models + synthesise (3 nodes) + archive ─────
+# ── Step 2: for each RF, extract models + synthesise + archive ────────────────
 
 run_gf22_group() {
     local rf_label="$1"
     local flow_cfg_name="$2"
-    local BASE="${SCRATCH}/catapult_gf22_${N_LAYERS}layer_lhs_${rf_label}"
+    local BASE="${SCRATCH}/catapult_gf22_2layer_lhs_${rf_label}"
 
     echo ""
-    echo "=== GF22nm ${N_LAYERS}-layer LHS  RF=${rf_label} ==="
+    echo "=== GF22nm 2-layer LHS  RF=${rf_label} ==="
 
     local ts run_id RUN_DIR
     ts=$(date '+%Y%m%d_%H%M%S')
@@ -116,11 +110,25 @@ run_gf22_group() {
 
     local JOBLIST="${RUN_DIR}/joblist.txt"
 
+    # ── Extract model files from 45nm archive + build joblist ─────────────────
     python3 - <<PYEOF
-import os, sys, tarfile, json
+import os, sys, tarfile, json, glob
 
 sys.path.insert(0, '${REPO_DIR}')
 from util.catapult_dataflow_config import CatapultDataflowConfig
+
+archive_45nm  = '${ARCHIVE_45NM}'
+flow_cfg      = os.path.join('${REPO_DIR}', '${flow_cfg_name}')
+run_dir       = '${RUN_DIR}'
+repo_dir      = '${REPO_DIR}'
+candidates_f  = '${CANDIDATES}'
+joblist_f     = '${JOBLIST}'
+
+base_cfg     = CatapultDataflowConfig.load_json(flow_cfg)
+build_root   = os.path.join(run_dir, 'build')
+data_root    = os.path.join(run_dir, 'data', 'models')
+shell_script = os.path.join(repo_dir, 'Perlmutter_scripts', 'catapult_shell.sh')
+flow_tcl     = os.path.join(repo_dir, 'util', 'catapult_hls4ml_flow.tcl')
 
 import tensorflow as tf_mod
 try:
@@ -142,19 +150,6 @@ def build_keras_h5(mj_content, out_path):
         print(f'    Warning: keras build failed: {e}')
         return False
 
-archive_45nm  = '${ARCHIVE_45NM}'
-flow_cfg      = os.path.join('${REPO_DIR}', '${flow_cfg_name}')
-run_dir       = '${RUN_DIR}'
-repo_dir      = '${REPO_DIR}'
-candidates_f  = '${CANDIDATES}'
-joblist_f     = '${JOBLIST}'
-
-base_cfg     = CatapultDataflowConfig.load_json(flow_cfg)
-build_root   = os.path.join(run_dir, 'build')
-data_root    = os.path.join(run_dir, 'data', 'models')
-shell_script = os.path.join(repo_dir, 'Perlmutter_scripts', 'catapult_shell.sh')
-flow_tcl     = os.path.join(repo_dir, 'util', 'catapult_hls4ml_flow.tcl')
-
 joblines = []
 skipped  = []
 
@@ -170,8 +165,9 @@ for i, line in enumerate(lines):
         skipped.append(line)
         continue
 
-    run_uuid  = run_name.rsplit('_', 1)[-1]
-    tag       = f'{run_uuid}__{stem}'
+    # Prefix with run UUID so same stem from different runs gets separate build dirs
+    run_uuid = run_name.rsplit('_', 1)[-1]
+    tag      = f'{run_uuid}__{stem}'
     build_dir = os.path.join(build_root, tag)
     data_dir  = os.path.join(data_root,  tag)
     keras_h5  = os.path.join(build_dir,  'keras_model.h5')
@@ -219,36 +215,35 @@ PYEOF
     local n_jobs
     n_jobs=$(wc -l < "$JOBLIST" 2>/dev/null || echo 0)
     [[ "$n_jobs" -gt 0 ]] || { echo "ERROR: no designs to synthesize" >&2; return 1; }
-    echo "  Ready: $n_jobs synthesis jobs  (3 nodes × $PARALLELISM = $(( PARALLELISM * 3 )) parallel)"
+    echo "  Ready: $n_jobs synthesis jobs  (2 nodes × $PARALLELISM = $(( PARALLELISM * 2 )) parallel)"
 
-    local n_a=$(( n_jobs / 3 ))
-    local n_b=$(( n_jobs / 3 ))
-    local n_c=$(( n_jobs - n_a - n_b ))
+    # ── Split joblist across two nodes ────────────────────────────────────────
+    local n_a=$(( n_jobs / 2 ))
+    local n_b=$(( n_jobs - n_a ))
     local JOBLIST_A="${RUN_DIR}/joblist_a.txt"
     local JOBLIST_B="${RUN_DIR}/joblist_b.txt"
-    local JOBLIST_C="${RUN_DIR}/joblist_c.txt"
-    head -n "$n_a"                        "$JOBLIST" > "$JOBLIST_A"
-    sed -n "$((n_a+1)),$((n_a+n_b))p"     "$JOBLIST" > "$JOBLIST_B"
-    tail -n "+$((n_a + n_b + 1))"         "$JOBLIST" > "$JOBLIST_C"
-    echo "  Split: node-a=$n_a  node-b=$n_b  node-c=$n_c"
+    head -n "$n_a"              "$JOBLIST" > "$JOBLIST_A"
+    tail -n "+$(( n_a + 1 ))"  "$JOBLIST" > "$JOBLIST_B"
+    echo "  Split: node-a=$n_a  node-b=$n_b"
 
+    # ── Generate two synthesis batch scripts (one per node) ───────────────────
     _make_synth_script() {
-        local part="$1" jl="$2"
-        local script="${RUN_DIR}/parallel_synth_${part}.sh"
-        local jlog="${RUN_DIR}/parallel_${part}.log"
+        local half="$1" jl="$2"
+        local script="${RUN_DIR}/parallel_synth_${half}.sh"
+        local jlog="${RUN_DIR}/parallel_${half}.log"
         cat > "$script" <<SBATCH_EOF
 #!/bin/bash
-#SBATCH --job-name=gf22_${N_LAYERS}l_${rf_label}_${part}
+#SBATCH --job-name=gf22_2l_${rf_label}_${half}
 #SBATCH --account=${SLURM_ACCOUNT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=100
-#SBATCH --mem=200G
+#SBATCH --cpus-per-task=128
+#SBATCH --mem=256G
 #SBATCH --constraint=${SLURM_CONSTRAINT}
 #SBATCH --time=${SLURM_TIME}
 #SBATCH --qos=${SLURM_QOS}
-#SBATCH --output=${RUN_DIR}/slurm_logs/parallel_${part}.out
-#SBATCH --error=${RUN_DIR}/slurm_logs/parallel_${part}.err
+#SBATCH --output=${RUN_DIR}/slurm_logs/parallel_${half}.out
+#SBATCH --error=${RUN_DIR}/slurm_logs/parallel_${half}.err
 
 set -euo pipefail
 source "${VENV}"
@@ -267,32 +262,30 @@ SBATCH_EOF
         echo "$script"
     }
 
-    local SCRIPT_A SCRIPT_B SCRIPT_C
+    local SCRIPT_A SCRIPT_B
     SCRIPT_A=$(_make_synth_script a "$JOBLIST_A")
     SCRIPT_B=$(_make_synth_script b "$JOBLIST_B")
-    SCRIPT_C=$(_make_synth_script c "$JOBLIST_C")
 
+    # ── Submit + resume loop ──────────────────────────────────────────────────
     local total="$n_jobs"
     local done_count max_rounds=20 round=0
     local TAR_DIR="${RUN_DIR}/tarballs"
 
-    local jid_a jid_b jid_c
+    local jid_a jid_b
     jid_a=$(sbatch --parsable "$SCRIPT_A")
     jid_b=$(sbatch --parsable "$SCRIPT_B")
-    jid_c=$(sbatch --parsable "$SCRIPT_C")
-    echo "  [round 0] Submitted: $jid_a (a, $n_a) + $jid_b (b, $n_b) + $jid_c (c, $n_c)"
-    wait_for_jobs "$TAR_DIR" "$jid_a" "$jid_b" "$jid_c"
+    echo "  [round 0] Submitted: $jid_a (node-a, $n_a jobs) + $jid_b (node-b, $n_b jobs)"
+    wait_for_jobs "$TAR_DIR" "$jid_a" "$jid_b"
     done_count=$(find "$TAR_DIR" -maxdepth 1 -name "*.tar.gz" 2>/dev/null | wc -l)
     echo "  [round 0] done: $done_count / $total"
 
     while (( done_count < total && round < max_rounds )); do
         round=$(( round + 1 ))
-        echo "  [round $round] $done_count/$total — $(( total - done_count )) remaining — re-submitting..."
+        echo "  [round $round] $done_count/$total done — $(( total - done_count )) remaining — re-submitting both nodes..."
         jid_a=$(sbatch --parsable "$SCRIPT_A")
         jid_b=$(sbatch --parsable "$SCRIPT_B")
-        jid_c=$(sbatch --parsable "$SCRIPT_C")
-        echo "  [round $round] Submitted: $jid_a + $jid_b + $jid_c"
-        wait_for_jobs "$TAR_DIR" "$jid_a" "$jid_b" "$jid_c"
+        echo "  [round $round] Submitted: $jid_a + $jid_b"
+        wait_for_jobs "$TAR_DIR" "$jid_a" "$jid_b"
         local prev=$done_count
         done_count=$(find "$TAR_DIR" -maxdepth 1 -name "*.tar.gz" 2>/dev/null | wc -l)
         echo "  [round $round] done: $done_count / $total  (+$(( done_count - prev )) new)"
@@ -305,9 +298,10 @@ SBATCH_EOF
         echo "  Synthesis complete ($done_count/$total)"
     fi
 
-    echo "  Archiving ${rf_label} → gf22fdx/ ..."
+    # ── Archive ───────────────────────────────────────────────────────────────
+    echo "  Archiving ${rf_label}..."
     bash "${REPO_DIR}/slurm/examples/archive_run.sh" "${RUN_DIR}" --yes
-    echo "  Done: GF22nm ${N_LAYERS}-layer LHS ${rf_label}."
+    echo "  Done: gf22 2-layer LHS ${rf_label}."
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -318,4 +312,4 @@ run_gf22_group rf8  configs/catapult_flow/config_catapult_flow_gf22_rf8.json
 run_gf22_group rf16 configs/catapult_flow/config_catapult_flow_gf22_rf16.json
 
 echo ""
-echo "GF22nm ${N_LAYERS}-layer LHS sweep complete."
+echo "GF22nm 2-layer LHS sweep complete."

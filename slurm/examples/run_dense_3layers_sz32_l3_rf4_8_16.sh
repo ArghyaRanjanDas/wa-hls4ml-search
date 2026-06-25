@@ -152,9 +152,9 @@ run_group() {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-run_group l3  4 config_dense_3layers_sz32_l3.json config_catapult_flow_rf4.json
-run_group l3  8 config_dense_3layers_sz32_l3.json config_catapult_flow_rf8.json
-run_group l3 16 config_dense_3layers_sz32_l3.json config_catapult_flow.json
+run_group l3  4 configs/model_sweeps/config_dense_3layers_sz32_l3.json configs/catapult_flow/config_catapult_flow_rf4.json
+run_group l3  8 configs/model_sweeps/config_dense_3layers_sz32_l3.json configs/catapult_flow/config_catapult_flow_rf8.json
+run_group l3 16 configs/model_sweeps/config_dense_3layers_sz32_l3.json configs/catapult_flow/config_catapult_flow.json
 
 echo ""
 echo "All done."

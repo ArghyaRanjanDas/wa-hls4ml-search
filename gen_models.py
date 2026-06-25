@@ -517,7 +517,7 @@ def cartesian_exec(config_params, output_dir, chunk_size=1000):
       sizes and activations, even bitwidths in [bitwidth_lb, bitwidth_ub].
       Single-layer is a special case with one entry in 'layers'.
     - otherwise → legacy multi-layer mode: coupled sizes, power-of-2 bitwidths
-      up to max_bit_width_po2 (supports config_dense_1to3layers.json style).
+      up to max_bit_width_po2 (supports configs/model_sweeps/config_dense_1to3layers.json style).
     """
     import itertools
 

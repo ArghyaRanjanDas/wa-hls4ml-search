@@ -4,7 +4,7 @@
 #
 # Parametrized via environment variables (set inline with --wrap):
 #   ORIG_RUN      — archive run dir name, e.g. run_20260531_093401_e6edde98
-#   FLOW_CFG      — flow config JSON (sets RF),  e.g. config_catapult_flow_rf1.json
+#   FLOW_CFG      — flow config JSON (sets RF),  e.g. configs/catapult_flow/config_catapult_flow_rf1.json
 #   KEEP_SCRATCH  — set to 1 to skip scratch cleanup (for inspection, default 0)
 #
 # MODEL_CFG is no longer needed — model weights come from sibling RF tarballs.
@@ -44,10 +44,10 @@ print(':'.join(f\"{s['port']}@{s['host']}\" for s in cfg['servers']))
 # ── Derive scratch base dir ───────────────────────────────────────────────────
 flow_stem=$(basename "$FLOW_CFG" .json)
 case "$flow_stem" in
-    config_catapult_flow_rf1) rf_suffix=rf1  ;;
-    config_catapult_flow_rf4) rf_suffix=rf4  ;;
-    config_catapult_flow_rf8) rf_suffix=rf8  ;;
-    config_catapult_flow)     rf_suffix=rf16 ;;
+    configs/catapult_flow/config_catapult_flow_rf1) rf_suffix=rf1  ;;
+    configs/catapult_flow/config_catapult_flow_rf4) rf_suffix=rf4  ;;
+    configs/catapult_flow/config_catapult_flow_rf8) rf_suffix=rf8  ;;
+    configs/catapult_flow/config_catapult_flow)     rf_suffix=rf16 ;;
     *) rf_suffix=$(echo "$flow_stem" | grep -oP 'rf\d+' || echo "rf?") ;;
 esac
 source_path=$(cat "$ORIG_ARCHIVE/source_dir.txt" 2>/dev/null || echo "")

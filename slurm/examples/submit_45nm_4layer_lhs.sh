@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=45nm_Nlayer_lhs
+#SBATCH --job-name=45nm_4layer_lhs
 #SBATCH --account=amsc011
 #SBATCH --qos=shared
 #SBATCH --nodes=1
@@ -8,25 +8,22 @@
 #SBATCH --mem=16G
 #SBATCH --constraint=cpu
 #SBATCH --time=2-00:00:00
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
+#SBATCH --output=%x_%j.out
+#SBATCH --error=%x_%j.err
 #
-# Nangate 45nm LHS synthesis for N-layer dense networks (N set via N_LAYERS env var).
-# Models generated from scratch; archives flat to nangate45/.
+# Nangate 45nm synthesis for 4-layer dense networks selected by LHS.
+# Models are generated from scratch (no pre-existing archive needed).
 # RF=1, 4, 8, 16; each group uses 3 nodes × 100 parallel slots (300 licenses).
+# Archives to nangate45/mlp-4layer/.
 #
 # Usage:
-#   N_LAYERS=5 sbatch slurm/examples/submit_45nm_nlayer_lhs.sh
-#   N_LAYERS=6 sbatch slurm/examples/submit_45nm_nlayer_lhs.sh
+#   sbatch slurm/examples/submit_45nm_4layer_lhs.sh
 #
 # Optional env vars:
-#   N_LAYERS     number of dense layers (required, e.g. 5 or 6)
+#   CANDIDATES   path to candidates file (default: auto-generated, N_LHS designs)
 #   N_LHS        number of LHS samples (default: 2500 → ~2,500 unique archs × 4 RF ≈ 10,000 total)
-#   CANDIDATES   path to candidates file (default: auto-generated)
 
 set -euo pipefail
-
-N_LAYERS="${N_LAYERS:?ERROR: set N_LAYERS before submitting (e.g. N_LAYERS=5 sbatch ...)}"
 
 REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 VENV="${WA_HLS4ML_VENV:-${SCRATCH}/venv_hls4ml/bin/activate}"
@@ -36,9 +33,9 @@ cd "$REPO_DIR"
 ARCHIVE_BASE="/global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult"
 ARCHIVE_45NM="${ARCHIVE_BASE}/nangate45"
 N_LHS="${N_LHS:-2500}"
-CANDIDATES="${CANDIDATES:-${ARCHIVE_45NM}/nangate45_lhs_${N_LAYERS}layer_${N_LHS}.txt}"
+CANDIDATES="${CANDIDATES:-${ARCHIVE_45NM}/nangate45_lhs_4layer_${N_LHS}.txt}"
 
-PARALLELISM=100
+PARALLELISM=100   # per node; 3 nodes per RF group → 300 total (= all licenses)
 SLURM_TIME=06:00:00
 SLURM_ACCOUNT=amsc011
 SLURM_QOS=express_amsc
@@ -51,11 +48,13 @@ with open('${REPO_DIR}/license_servers_perlmutter.json') as f:
 print(':'.join(f\"{s['port']}@{s['host']}\" for s in cfg['servers']))
 ")
 
-# ── Step 1: LHS sampling ──────────────────────────────────────────────────────
-# Feature vector: [in, l1..lN, bw, a1..aN]  → dim = 2 + 2*N_LAYERS
+# ── Step 1: LHS sampling + model generation ───────────────────────────────────
+#
+# Generates CANDIDATES file (stem<TAB>in_sz<TAB>l1<TAB>l2<TAB>l3<TAB>l4<TAB>bw<TAB>acts...)
+# No archive needed — models are built from scratch via gen_models._build_dense_model.
 
 if [ ! -f "$CANDIDATES" ]; then
-    echo "=== LHS sampling: N=${N_LHS}, ${N_LAYERS}-layer, $(( 2 + 2 * N_LAYERS ))D space ==="
+    echo "=== LHS sampling: N=${N_LHS}, 4-layer, 10D parameter space ==="
     python3 - <<PYEOF
 import sys, os, math
 import numpy as np
@@ -63,16 +62,17 @@ from scipy.stats.qmc import LatinHypercube
 
 sys.path.insert(0, '${REPO_DIR}')
 
-SIZES    = [4, 8, 16, 32, 64]
-BWS      = [4, 6, 8, 10, 12, 14]
-ACTS     = ["relu", "sigmoid", "tanh"]
-N_LAYERS = ${N_LAYERS}
-N_LHS    = int('${N_LHS}')
+SIZES = [4, 8, 16, 32, 64]
+BWS   = [4, 6, 8, 10, 12, 14]
+ACTS  = ["relu", "sigmoid", "tanh"]
+N_LAYERS = 4
+N_LHS = int('${N_LHS}')
 out_path = '${CANDIDATES}'
 
-DIM = 2 + 2 * N_LAYERS   # in + N sizes + bw + N activations
-sampler = LatinHypercube(d=DIM, seed=42)
-raw = sampler.random(n=N_LHS)
+# ── Sample 10D unit hypercube ─────────────────────────────────────────────
+# dims: [in, l1, l2, l3, l4, bw, a1, a2, a3, a4]
+sampler = LatinHypercube(d=10, seed=42)
+raw = sampler.random(n=N_LHS)    # (N_LHS, 10)
 
 log2_sizes = [math.log2(s) for s in SIZES]
 lo_sz, hi_sz = log2_sizes[0], log2_sizes[-1]
@@ -93,9 +93,9 @@ configs = set()
 ordered = []
 for row in raw:
     in_sz  = snap_size(row[0])
-    layers = tuple(snap_size(row[1 + i]) for i in range(N_LAYERS))
-    bw     = snap_bw(row[1 + N_LAYERS])
-    acts   = tuple(snap_act(row[2 + N_LAYERS + i]) for i in range(N_LAYERS))
+    layers = tuple(snap_size(row[i]) for i in range(1, N_LAYERS + 1))
+    bw     = snap_bw(row[N_LAYERS + 1])
+    acts   = tuple(snap_act(row[N_LAYERS + 2 + i]) for i in range(N_LAYERS))
     key = (in_sz,) + layers + (bw,) + acts
     if key not in configs:
         configs.add(key)
@@ -103,14 +103,15 @@ for row in raw:
 
 print(f"  Unique configs after dedup: {len(ordered)} / {N_LHS}")
 
+os.makedirs(os.path.dirname(out_path), exist_ok=True) if os.path.dirname(out_path) else None
 with open(out_path, 'w') as f:
     for idx, cfg in enumerate(ordered):
         in_sz  = cfg[0]
-        layers = cfg[1:1 + N_LAYERS]
-        bw     = cfg[1 + N_LAYERS]
-        acts   = cfg[2 + N_LAYERS:]
-        stem   = f"dense_{N_LAYERS}l_{idx}"
-        parts  = [stem, str(in_sz)] + [str(s) for s in layers] + [str(bw)] + list(acts)
+        layers = cfg[1:N_LAYERS + 1]
+        bw     = cfg[N_LAYERS + 1]
+        acts   = cfg[N_LAYERS + 2:]
+        stem = f"dense_4l_{idx}"
+        parts = [stem, str(in_sz)] + [str(s) for s in layers] + [str(bw)] + list(acts)
         f.write('\t'.join(parts) + '\n')
 
 print(f"  Candidates written to {out_path}")
@@ -153,10 +154,10 @@ wait_for_jobs() {
 run_45nm_group() {
     local rf_label="$1"
     local flow_cfg_name="$2"
-    local BASE="${SCRATCH}/catapult_45nm_${N_LAYERS}layer_lhs_${rf_label}"
+    local BASE="${SCRATCH}/catapult_45nm_4layer_lhs_${rf_label}"
 
     echo ""
-    echo "=== Nangate 45nm ${N_LAYERS}-layer LHS  RF=${rf_label} ==="
+    echo "=== Nangate 45nm 4-layer LHS  RF=${rf_label} ==="
 
     local ts run_id RUN_DIR
     ts=$(date '+%Y%m%d_%H%M%S')
@@ -167,6 +168,7 @@ run_45nm_group() {
 
     local JOBLIST="${RUN_DIR}/joblist.txt"
 
+    # ── Generate QKeras models from scratch + build joblist ───────────────────
     python3 - <<PYEOF
 import os, sys, json
 
@@ -174,12 +176,11 @@ sys.path.insert(0, '${REPO_DIR}')
 from gen_models import _build_dense_model
 from util.catapult_dataflow_config import CatapultDataflowConfig
 
-flow_cfg     = os.path.join('${REPO_DIR}', '${flow_cfg_name}')
-run_dir      = '${RUN_DIR}'
-repo_dir     = '${REPO_DIR}'
-candidates_f = '${CANDIDATES}'
-joblist_f    = '${JOBLIST}'
-N_LAYERS     = ${N_LAYERS}
+flow_cfg      = os.path.join('${REPO_DIR}', '${flow_cfg_name}')
+run_dir       = '${RUN_DIR}'
+repo_dir      = '${REPO_DIR}'
+candidates_f  = '${CANDIDATES}'
+joblist_f     = '${JOBLIST}'
 
 base_cfg     = CatapultDataflowConfig.load_json(flow_cfg)
 build_root   = os.path.join(run_dir, 'build')
@@ -193,20 +194,28 @@ config_params = {
     "probs": {"activations": [1, 1, 1, 0]},
 }
 
+import tensorflow as tf_mod
+try:
+    from qkeras.utils import _add_supported_quantized_objects
+    _qkeras_co = {}
+    _add_supported_quantized_objects(_qkeras_co)
+except Exception:
+    _qkeras_co = None
+
 joblines = []
 skipped  = []
 
 with open(candidates_f) as f:
     lines = [l.strip() for l in f if l.strip()]
 
-print(f"  Building {len(lines)} models...")
+print(f"  Building {len(lines)} models and creating joblists...")
 for i, line in enumerate(lines):
-    parts  = line.split('\t')
+    parts = line.split('\t')
     stem   = parts[0]
     in_sz  = int(parts[1])
-    l_szs  = [int(x) for x in parts[2:2 + N_LAYERS]]
-    bw     = int(parts[2 + N_LAYERS])
-    acts   = parts[3 + N_LAYERS:3 + 2 * N_LAYERS]
+    l_szs  = [int(x) for x in parts[2:6]]
+    bw     = int(parts[6])
+    acts   = parts[7:11]
 
     build_dir = os.path.join(build_root, stem)
     data_dir  = os.path.join(data_root,  stem)
@@ -214,7 +223,8 @@ for i, line in enumerate(lines):
 
     try:
         os.makedirs(build_dir, exist_ok=True)
-        model = _build_dense_model(list(zip(l_szs, acts)), bw, config_params, input_size=in_sz)
+        layer_configs = list(zip(l_szs, acts))
+        model = _build_dense_model(layer_configs, bw, config_params, input_size=in_sz)
         model.save(keras_h5, include_optimizer=False)
     except Exception as e:
         print(f"  Warning: model build failed for {stem}: {e}")
@@ -233,7 +243,7 @@ for i, line in enumerate(lines):
 with open(joblist_f, 'w') as fout:
     fout.write('\n'.join(joblines) + ('\n' if joblines else ''))
 
-print(f"  Joblist: {len(joblines)} ready,  {len(skipped)} skipped")
+print(f"  Joblist: {len(joblines)} designs ready,  {len(skipped)} skipped")
 if skipped:
     for s in skipped[:10]:
         print(f"    {s}")
@@ -246,15 +256,16 @@ PYEOF
     [[ "$n_jobs" -gt 0 ]] || { echo "ERROR: no designs to synthesize" >&2; return 1; }
     echo "  Ready: $n_jobs synthesis jobs  (3 nodes × $PARALLELISM = $(( PARALLELISM * 3 )) parallel)"
 
+    # ── Split joblist across three nodes ──────────────────────────────────────
     local n_a=$(( n_jobs / 3 ))
     local n_b=$(( n_jobs / 3 ))
     local n_c=$(( n_jobs - n_a - n_b ))
     local JOBLIST_A="${RUN_DIR}/joblist_a.txt"
     local JOBLIST_B="${RUN_DIR}/joblist_b.txt"
     local JOBLIST_C="${RUN_DIR}/joblist_c.txt"
-    head -n "$n_a"                        "$JOBLIST" > "$JOBLIST_A"
-    sed -n "$((n_a+1)),$((n_a+n_b))p"     "$JOBLIST" > "$JOBLIST_B"
-    tail -n "+$((n_a + n_b + 1))"         "$JOBLIST" > "$JOBLIST_C"
+    head -n "$n_a"                            "$JOBLIST" > "$JOBLIST_A"
+    sed -n "$((n_a+1)),$((n_a+n_b))p"         "$JOBLIST" > "$JOBLIST_B"
+    tail -n "+$((n_a + n_b + 1))"             "$JOBLIST" > "$JOBLIST_C"
     echo "  Split: node-a=$n_a  node-b=$n_b  node-c=$n_c"
 
     _make_synth_script() {
@@ -263,7 +274,7 @@ PYEOF
         local jlog="${RUN_DIR}/parallel_${part}.log"
         cat > "$script" <<SBATCH_EOF
 #!/bin/bash
-#SBATCH --job-name=45nm_${N_LAYERS}l_${rf_label}_${part}
+#SBATCH --job-name=45nm_4l_${rf_label}_${part}
 #SBATCH --account=${SLURM_ACCOUNT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -297,6 +308,7 @@ SBATCH_EOF
     SCRIPT_B=$(_make_synth_script b "$JOBLIST_B")
     SCRIPT_C=$(_make_synth_script c "$JOBLIST_C")
 
+    # ── Submit + resume loop ──────────────────────────────────────────────────
     local total="$n_jobs"
     local done_count max_rounds=20 round=0
     local TAR_DIR="${RUN_DIR}/tarballs"
@@ -330,9 +342,10 @@ SBATCH_EOF
         echo "  Synthesis complete ($done_count/$total)"
     fi
 
+    # ── Archive to nangate45/ ─────────────────────────────────────────────────
     echo "  Archiving ${rf_label} → nangate45/ ..."
     bash "${REPO_DIR}/slurm/examples/archive_run.sh" "${RUN_DIR}" --yes
-    echo "  Done: 45nm ${N_LAYERS}-layer LHS ${rf_label}."
+    echo "  Done: 45nm 4-layer LHS ${rf_label}."
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -343,4 +356,4 @@ run_45nm_group rf8  configs/catapult_flow/config_catapult_flow_rf8.json
 run_45nm_group rf16 configs/catapult_flow/config_catapult_flow.json
 
 echo ""
-echo "Nangate 45nm ${N_LAYERS}-layer LHS sweep complete."
+echo "Nangate 45nm 4-layer LHS sweep complete."

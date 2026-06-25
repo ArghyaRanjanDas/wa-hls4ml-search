@@ -391,10 +391,10 @@ SBATCH_EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-run_45nm_group rf1  config_catapult_flow_rf1.json
-run_45nm_group rf4  config_catapult_flow_rf4.json
-run_45nm_group rf8  config_catapult_flow_rf8.json
-run_45nm_group rf16 config_catapult_flow.json
+run_45nm_group rf1  configs/catapult_flow/config_catapult_flow_rf1.json
+run_45nm_group rf4  configs/catapult_flow/config_catapult_flow_rf4.json
+run_45nm_group rf8  configs/catapult_flow/config_catapult_flow_rf8.json
+run_45nm_group rf16 configs/catapult_flow/config_catapult_flow.json
 
 echo ""
 echo "Nangate 45nm ${N_LAYERS}-layer sz128 sweep complete."

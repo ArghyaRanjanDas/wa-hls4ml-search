@@ -149,7 +149,7 @@ SBATCH_EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-run_group l1_rf8  config_dense_3layers_sz64_l1.json config_catapult_flow_rf8.json
+run_group l1_rf8  configs/model_sweeps/config_dense_3layers_sz64_l1.json configs/catapult_flow/config_catapult_flow_rf8.json
 
 echo ""
 echo "Node C done (RF=8)."

@@ -150,11 +150,11 @@ SBATCH_EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-run_group inp_rf1_l1a  config_dense_3layers_sz64_inp_l1a.json config_catapult_flow_rf1.json
-run_group inp_rf1_l1b  config_dense_3layers_sz64_inp_l1b.json config_catapult_flow_rf1.json
+run_group inp_rf1_l1a  configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow_rf1.json
+run_group inp_rf1_l1b  configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow_rf1.json
 
-run_group inp_rf16_l1a config_dense_3layers_sz64_inp_l1a.json config_catapult_flow.json
-run_group inp_rf16_l1b config_dense_3layers_sz64_inp_l1b.json config_catapult_flow.json
+run_group inp_rf16_l1a configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow.json
+run_group inp_rf16_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow.json
 
 echo ""
 echo "Node D done (RF=1 + RF=16)."

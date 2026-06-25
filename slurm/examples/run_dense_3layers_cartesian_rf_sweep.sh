@@ -11,7 +11,7 @@ COMMON_ARGS=(
   --catapult_shell Perlmutter_scripts/catapult_shell.sh
   --flow_tcl      util/catapult_hls4ml_flow.tcl
   --license_config license_servers_perlmutter.json
-  --gen_model_config_json config_dense_3layers.json
+  --gen_model_config_json configs/model_sweeps/config_dense_3layers.json
   --cartesian
   --slurm --slurm-qos express_amsc --slurm-time 00:30:00
   --slurm-parallelism 100 --slurm-mem-per-job 4G
@@ -20,17 +20,17 @@ COMMON_ARGS=(
 echo "=== RF=4, bw=4,8,12, sizes 4-16 (6561 designs) ==="
 python iter_manager_catapult.py \
   -o $SCRATCH/catapult_dense_3layers_cartesian_rf4 \
-  --flow_config_json config_catapult_flow_rf4.json \
+  --flow_config_json configs/catapult_flow/config_catapult_flow_rf4.json \
   "${COMMON_ARGS[@]}"
 
 echo "=== RF=8, bw=4,8,12, sizes 4-16 (6561 designs) ==="
 python iter_manager_catapult.py \
   -o $SCRATCH/catapult_dense_3layers_cartesian_rf8 \
-  --flow_config_json config_catapult_flow_rf8.json \
+  --flow_config_json configs/catapult_flow/config_catapult_flow_rf8.json \
   "${COMMON_ARGS[@]}"
 
 echo "=== RF=16, bw=4,8,12, sizes 4-16 (6561 designs) ==="
 python iter_manager_catapult.py \
   -o $SCRATCH/catapult_dense_3layers_cartesian_rf16 \
-  --flow_config_json config_catapult_flow.json \
+  --flow_config_json configs/catapult_flow/config_catapult_flow.json \
   "${COMMON_ARGS[@]}"

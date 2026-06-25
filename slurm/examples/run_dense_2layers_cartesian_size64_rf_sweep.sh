@@ -22,19 +22,19 @@ for RF in 1 4 8; do
 
   echo "--- Sub-run A: input=64, layers 4-64 (675 designs) ---"
   python iter_manager_catapult.py -o "$OUT" \
-    --flow_config_json config_catapult_flow_rf${RF}.json \
-    --gen_model_config_json config_dense_2layers_size64_A.json \
+    --flow_config_json configs/catapult_flow/config_catapult_flow_rf${RF}.json \
+    --gen_model_config_json configs/model_sweeps/config_dense_2layers_size64_A.json \
     "${COMMON_ARGS[@]}"
 
   echo "--- Sub-run B: input=4-32, layer1=64, layer2=4-64 (540 designs) ---"
   python iter_manager_catapult.py -o "$OUT" \
-    --flow_config_json config_catapult_flow_rf${RF}.json \
-    --gen_model_config_json config_dense_2layers_size64_B.json \
+    --flow_config_json configs/catapult_flow/config_catapult_flow_rf${RF}.json \
+    --gen_model_config_json configs/model_sweeps/config_dense_2layers_size64_B.json \
     "${COMMON_ARGS[@]}"
 
   echo "--- Sub-run C: input=4-32, layer1=4-32, layer2=64 (432 designs) ---"
   python iter_manager_catapult.py -o "$OUT" \
-    --flow_config_json config_catapult_flow_rf${RF}.json \
-    --gen_model_config_json config_dense_2layers_size64_C.json \
+    --flow_config_json configs/catapult_flow/config_catapult_flow_rf${RF}.json \
+    --gen_model_config_json configs/model_sweeps/config_dense_2layers_size64_C.json \
     "${COMMON_ARGS[@]}"
 done

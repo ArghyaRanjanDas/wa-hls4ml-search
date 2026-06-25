@@ -140,8 +140,8 @@ SBATCH_EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-run_group l1_rf1  config_dense_3layers_sz64_l1.json config_catapult_flow_rf1.json
-run_group l1_rf16 config_dense_3layers_sz64_l1.json config_catapult_flow.json
+run_group l1_rf1  configs/model_sweeps/config_dense_3layers_sz64_l1.json configs/catapult_flow/config_catapult_flow_rf1.json
+run_group l1_rf16 configs/model_sweeps/config_dense_3layers_sz64_l1.json configs/catapult_flow/config_catapult_flow.json
 
 echo ""
 echo "Node A done (RF=1, RF=16)."

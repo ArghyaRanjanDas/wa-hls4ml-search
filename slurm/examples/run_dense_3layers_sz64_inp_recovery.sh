@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=orch_sz64_inp_e
+#SBATCH --job-name=orch_sz64_inp_rec
 #SBATCH --account=amsc011
 #SBATCH --qos=shared
 #SBATCH --nodes=1
@@ -8,9 +8,15 @@
 #SBATCH --mem=16G
 #SBATCH --time=2-00:00:00
 #SBATCH --constraint=cpu
-# sz64 inp — Node E: RF=4 (l1a+l1b) + RF=8 (l1a+l1b)
-# Part of 2-node parallel run (D: RF=1+16, E: RF=4+8).
-# Submit alongside node_d to use 200 licenses simultaneously.
+# Recovery orchestrator for sz64 inp group — RF=8 and RF=16 only.
+# RF=1 and RF=4 are complete and archived; do NOT re-submit node_d/e (they would
+# re-run RF=1/RF=4 from scratch since scratch was cleaned on archive).
+#
+# State at submission:
+#   RF=8  l1a  10402/16200 done  (run_dir + parallel.log exist → resume-failed)
+#   RF=8  l1b  not started       (run_dir created fresh)
+#   RF=16 l1a  0/16200           (run_dir + parallel.log exist → resume-failed)
+#   RF=16 l1b  not started       (run_dir created fresh)
 
 set -euo pipefail
 
@@ -150,11 +156,11 @@ SBATCH_EOF
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-run_group inp_rf4_l1a configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow_rf4.json
-run_group inp_rf4_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow_rf4.json
+run_group inp_rf8_l1a  configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow_rf8.json
+run_group inp_rf8_l1b  configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow_rf8.json
 
-run_group inp_rf8_l1a configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow_rf8.json
-run_group inp_rf8_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow_rf8.json
+run_group inp_rf16_l1a configs/model_sweeps/config_dense_3layers_sz64_inp_l1a.json configs/catapult_flow/config_catapult_flow.json
+run_group inp_rf16_l1b configs/model_sweeps/config_dense_3layers_sz64_inp_l1b.json configs/catapult_flow/config_catapult_flow.json
 
 echo ""
-echo "Node E done (RF=4 + RF=8)."
+echo "Recovery done (RF=8 + RF=16)."
