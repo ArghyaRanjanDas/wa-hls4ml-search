@@ -208,9 +208,12 @@ dataset
 **/catapult.log
 **/iter_manager.log
 
-# SLURM job output files (generated in repo root by sbatch)
-slurm-*.out
-slurm-*.err
+# SLURM job output files (both default slurm-N.out and custom %x_%j.out formats)
+*.out
+*.err
+node_history.csv
+catapult_native/
+data-cards/
 
 # Large generated datasets/artifacts (keep repo code/docs focused)
 /compressed_pregen_models/
