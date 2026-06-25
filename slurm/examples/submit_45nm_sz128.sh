@@ -23,8 +23,15 @@
 #   N_LAYERS=3 sbatch slurm/examples/submit_45nm_sz128.sh   # 3-layer (LHS, N=2500)
 #
 # Optional env vars:
-#   N_LHS        LHS sample count for N_LAYERS=3 (default: 2500)
-#   CANDIDATES   override path to candidates file
+#   N_LHS          LHS sample count for N_LAYERS=3 (default: 2500)
+#   CANDIDATES     override path to candidates file
+#   SLURM_TIME     wall time per synthesis node (default: 06:00:00 = express_amsc limit)
+#   SLURM_QOS      SLURM QOS for synthesis nodes (default: express_amsc)
+#
+# NOTE on RF=1 with large designs (input=128, layer=128):
+#   These circuits can exceed 6h synthesis time and will time out repeatedly under
+#   express_amsc. Run RF=4/8/16 first, then retry RF=1 alone with:
+#     SLURM_TIME=1-22:00:00 SLURM_QOS=regular N_LAYERS=2 sbatch submit_45nm_sz128.sh
 
 set -euo pipefail
 
@@ -47,9 +54,9 @@ fi
 CANDIDATES="${CANDIDATES:-${CAND_DEFAULT}}"
 
 PARALLELISM=100
-SLURM_TIME=06:00:00
+SLURM_TIME="${SLURM_TIME:-06:00:00}"
 SLURM_ACCOUNT=amsc011
-SLURM_QOS=express_amsc
+SLURM_QOS="${SLURM_QOS:-express_amsc}"
 SLURM_CONSTRAINT=cpu
 
 LM_LICENSE_FILE=$(python3 -c "
