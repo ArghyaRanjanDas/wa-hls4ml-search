@@ -8,8 +8,8 @@
 #SBATCH --mem=16G
 #SBATCH --constraint=cpu
 #SBATCH --time=2-00:00:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 #
 # GF22nm LHS sweep for N-layer dense networks, extracting models from the 45nm archive.
 # RF=1, 4, 8, 16; each group uses 3 nodes × 100 parallel slots (300 licenses).

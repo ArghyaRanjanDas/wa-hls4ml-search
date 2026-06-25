@@ -8,8 +8,8 @@
 #SBATCH --mem=8G
 #SBATCH --constraint=cpu
 #SBATCH --time=2-00:00:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 #
 # GF22nm cartesian sweep — all 1,800 unique single-layer dense NN configs
 # (input 4-64, output 4-64, relu/tanh/sigmoid, bitwidth 4-14 even), 4 RF values.

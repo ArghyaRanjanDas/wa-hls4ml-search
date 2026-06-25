@@ -8,8 +8,8 @@
 #SBATCH --mem=16G
 #SBATCH --constraint=cpu
 #SBATCH --time=2-00:00:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 #
 # Nangate 45nm sz128 extension sweep — L=1, 2, or 3 dense networks.
 # Synthesises only architectures where at least one size dimension = 128

@@ -8,8 +8,8 @@
 #SBATCH --mem=16G
 #SBATCH --constraint=cpu
 #SBATCH --time=2-00:00:00
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 #
 # Nangate 45nm LHS synthesis for N-layer dense networks (N set via N_LAYERS env var).
 # Models generated from scratch; archives flat to nangate45/.
