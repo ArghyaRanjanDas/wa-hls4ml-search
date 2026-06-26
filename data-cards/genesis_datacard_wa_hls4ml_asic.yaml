@@ -1,0 +1,666 @@
+# ============================================================
+# GENESIS MISSION DATA CARD v1.1
+# wa-hls4ml Catapult ASIC Synthesis Dataset
+# ============================================================
+
+supports_discoverability: "Yes"
+supports_accessibility: "Yes"
+supports_interoperability: "Yes"
+supports_reusability: "Yes"
+supports_governed_use: "Yes"
+supports_ai_usability: "Yes"
+
+# ============================================================
+# DISCOVERABILITY
+# ============================================================
+discoverability:
+  datacard:
+    template_version: "1.1"
+    datacard_version: "1.0"
+    filename: "genesis_datacard_wa_hls4ml_asic.yaml"
+    language: en
+
+    id:
+      type: local
+      value: wa-hls4ml-asic-v1.0
+
+    sensitivity:
+      overall_sensitivity: Public
+      source_marking_string: ""
+      source_marking_scheme: None
+      classified_status: "No"
+      cui_status: "No"
+      ucni_status: "No"
+
+    created_date: "2026-06-25"
+    updated_date: "2026-06-25"
+
+    change_log:
+      - change_date: "2026-06-25"
+        data_card_version: "1.0"
+        summary: "Initial creation"
+
+    creation_method: Hybrid
+
+    created_by:
+      - contribution_date: "2026-06-25"
+        description: "Authored and edited the data card."
+        creator:
+          agent_type: person
+          person:
+            given_name: Giuseppe
+            family_name: Di Guglielmo
+            orcid: https://orcid.org/0000-0002-5749-1432
+            email: gdg@fnal.gov
+            affiliation:
+              name: Fermi National Accelerator Laboratory
+              ror_id: https://ror.org/05579410
+            role:
+              - Writing_Original_Draft
+              - Writing_Review_Editing
+              - Data_Curation
+      - contribution_date: "2026-06-25"
+        description: "AI assistance for initial structure and content."
+        creator:
+          agent_type: ai_model
+          ai_model:
+            name: Claude Sonnet 4.6
+            version: claude-sonnet-4-6
+            accessed_date: "2026-06-25"
+            identifier:
+              type: url
+              value: https://www.anthropic.com/claude
+            role:
+              - Other
+            relationship: used_to_create
+
+  # --- Identification -------------------------------------------
+  identification:
+    name: "wa-hls4ml ASIC Synthesis Dataset"
+    project: "genesis"
+    version: "1.0"
+
+    primary_id:
+      type: local
+      value: wa-hls4ml-catapult-asic-v1.0
+
+    additional_ids:
+      - type: url
+        value: https://arxiv.org/abs/2511.05615  # older FPGA paper; update with ASIC paper when available
+
+    supersedes:
+    superseded_by:
+    parent_collection:
+
+  # --- Description ----------------------------------------------
+  dataset_description:
+    science_domain: "Engineering"
+
+    dataset_summary: >-
+      Siemens Catapult HLS (v2026.1_1) synthesis results for 529,507 quantized dense
+      neural networks (QKeras QDense layers) targeting two ASIC technology nodes:
+      Nangate 45 nm Open Cell Library (485,905 designs) and GlobalFoundries 22FDX
+      FD-SOI (43,602 designs). Each record reports latency, throughput (initiation
+      interval), and total chip area for a specific network architecture (1–10 layers,
+      4–128 neurons/layer, bitwidths 4–14 bits, activations relu/sigmoid/tanh) and
+      synthesis configuration (ReuseFactor 1/4/8/16). The dataset is generated to
+      train surrogate models for rapid ASIC resource and timing estimation in the
+      wa-hls4ml project.
+
+    purpose: >-
+      To provide a large-scale, systematically sampled benchmark of ASIC synthesis
+      outcomes for quantized dense neural networks, enabling data-driven surrogate
+      models that predict latency and area without invoking the full HLS tool flow.
+      The Siemens Catapult HLS targeting ASIC technology nodes extends the original
+      wa-hls4ml FPGA/Vivado dataset to cover two ASIC technology nodes.
+
+    collection_methodology: >-
+      Automated Siemens Catapult HLS (v2026.1_1) synthesis via hls4ml on NERSC
+      Perlmutter, using GNU parallel SLURM jobs (3 nodes × 100 concurrent Catapult
+      instances = 300 licenses). For Nangate 45 nm: architectures were enumerated
+      by full Cartesian product (1–3 layers) or Latin Hypercube Sampling (LHS,
+      4–10 layers), all generated from scratch. For GF22FDX: the 1-layer sweep
+      uses the same full Cartesian product as 45 nm; 2–3-layer architectures are
+      a subset re-synthesised from the 45 nm pool via LHS sampling. All designs
+      were synthesised at ReuseFactor 1, 4, 8, and 16.
+
+    data_characteristics: >-
+      529,507 total designs: 485,905 on nangate45 (4.4 TB) and 43,602 on gf22fdx
+      (50 GB). Architecture coverage: 1–10 dense layers; neuron counts 4, 8, 16,
+      32, 64 (128 for 1-layer extension); bitwidths 4–14 (even); activations
+      relu/sigmoid/tanh; ReuseFactor 1/4/8/16. 1–3-layer sweeps are full
+      Cartesian products; 4–10-layer and GF22FDX 2–3-layer sweeps use LHS
+      (N=2,500–10,000 samples each). Each design is stored as one JSON report and
+      one synthesis tarball.
+
+    limitations: >-
+      (1) Fixed 5 ns clock (200 MHz); timing closure at other targets not included.
+      (2) BramFactor=0 for all designs — no block-RAM inference.
+      (3) 3% of 3-layer Cartesian designs may share identical RTL due to Catapult
+      AutoCompact but differ as synthesis parameter-space entries.
+      (4) GF22FDX 2-layer Pass 1 (3,076 designs) has restricted coverage
+      (bitwidths {6,10,14} and size=64 under-sampled due to a deduplication bug).
+      (5) 1,341 fixed-weight/superseded designs from legacy 3-layer random runs are
+      archived but excluded from the training-eligible count.
+
+    tags:
+      project: genesis
+      science: "ASIC design, high-level synthesis, machine learning"
+      object_type: Dataset
+
+    task_category:
+      - regression
+    task_subcategory:
+      - other
+
+    keywords:
+      - hls4ml
+      - Siemens Catapult HLS
+      - ASIC synthesis
+      - neural network
+      - surrogate model
+      - high-level synthesis
+      - resource estimation
+      - latency estimation
+      - quantized neural network
+      - QKeras
+      - Nangate 45nm
+      - GF22FDX
+      - machine learning
+
+  product_type: Data
+  dataset_type: ND
+
+  release_status: Draft
+
+  # --- Contacts -------------------------------------------------
+  contact:
+    agent_type: person
+    person:
+      given_name: Giuseppe
+      family_name: Di Guglielmo
+      orcid: https://orcid.org/0000-0002-5749-1432
+      email: gdg@fnal.gov
+      affiliation:
+        name: Fermi National Accelerator Laboratory
+        ror_id: https://ror.org/05579410
+    succession_note: "Contact Benjamin Hawks at bhawks@fnal.gov for wa-hls4ml project inquiries."
+
+  additional_contacts:
+    - person:
+        given_name: Benjamin
+        family_name: Hawks
+        orcid: https://orcid.org/0000-0001-5700-0288
+        email: bhawks@fnal.gov
+        affiliation:
+          name: Fermi National Accelerator Laboratory
+          ror_id: https://ror.org/05579410
+    - person:
+        given_name: Arghya Ranjan
+        family_name: Das
+        orcid:
+        email: das214@purdue.edu
+        affiliation:
+          name: Purdue University
+          ror_id: https://ror.org/04ksd4g47
+    - person:
+        given_name: Jason
+        family_name: Weitz
+        orcid:
+        email: jdweitz@ucsd.edu
+        affiliation:
+          name: University of California San Diego
+          ror_id: https://ror.org/0168r3w48
+
+  # --- Authorship -----------------------------------------------
+  authors:
+    - type: person
+      person:
+        given_name: Giuseppe
+        family_name: Di Guglielmo
+        orcid: https://orcid.org/0000-0002-5749-1432
+        email: gdg@fnal.gov
+        affiliation:
+          name: Fermi National Accelerator Laboratory
+          ror_id: https://ror.org/05579410
+        role:
+          - Data_Collection
+          - Software
+          - Data_Curation
+    - type: person
+      person:
+        given_name: Benjamin
+        family_name: Hawks
+        orcid: https://orcid.org/0000-0001-5700-0288
+        email: bhawks@fnal.gov
+        affiliation:
+          name: Fermi National Accelerator Laboratory
+          ror_id: https://ror.org/05579410
+        role:
+          - Conceptualization
+  contributors: []
+
+  # --- Sponsors -------------------------------------------------
+  sponsor_organizations:
+    - name: U.S. Department of Energy
+      ror_id: https://ror.org/01bj3aw27
+      award_number:
+      funding_source:
+      program: Genesis
+
+  sponsoring_doe_program_office:
+  sponsoring_doe_subprogram:
+
+  # --- Research Organizations -----------------------------------
+  research_organizations:
+    - name: Fermi National Accelerator Laboratory
+      ror_id: https://ror.org/05579410
+
+  # --- Facilities -----------------------------------------------
+  facilities:
+    - name: National Energy Research Scientific Computing Center (NERSC)
+      ror_id: https://ror.org/05574368
+      role:
+        - Resources
+      location:
+        description: "Lawrence Berkeley National Laboratory, Berkeley, CA, USA"
+        ror_id: https://ror.org/02jbv0t02
+
+  # --- Sensitivity ----------------------------------------------
+  sensitivity:
+    overall_sensitivity: Unclassified_Uncontrolled
+    source_marking_string: ""
+    source_marking_scheme: None
+    classified_status: "No"
+    cui_status: "No"
+    ucni_status: "No"
+    normalized_control_basis: Other_Controlled  # synthesis outputs generated under Siemens EDA Catapult HLS EULA; distribution restrictions may apply
+
+  # --- Workflow -------------------------------------------------
+  workflow:
+    state: Analysis
+    is_intermediate: "No"
+    pipeline_stage: "Post-HLS (high-level synthesis) report collection; actively used for ML surrogate training"
+
+# ============================================================
+# ACCESSIBILITY
+# ============================================================
+accessibility:
+  access_policy:
+    access_level: Controlled
+    access_restrictions: >-
+      Currently accessible only to authorized users of the NERSC AmSC project
+      (amsc011) on the Perlmutter CFS filesystem. Public release pending DOI
+      registration, data management plan approval, and review of Siemens EDA
+      Catapult HLS EULA constraints on distribution of synthesis outputs.
+    authorization_required:
+      - Account
+    intended_partner_classes:
+      - Academic_Researchers
+      - DOE_NNSA_Lab
+      - Federal_Partner
+    approved_environments:
+      - "NERSC Perlmutter (CFS /global/cfs/cdirs/amsc011/)"
+    policy_url:
+    policy_text: "Access restricted to authorized NERSC AmSC project (amsc011) users pending formal release review."
+
+  access:
+    current_location: /global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult/
+    publicly_facing_landing_page_url:
+    intended_repositories:  # TBD — pending Siemens EDA EULA review and DOE data management plan approval before selecting a public repository
+
+  dataset_scale:
+    record_count: 529507
+    record_unit: other  # synthesised designs (one JSON report + one tar.gz per design)
+    compressed_bytes: 4893536870912   # ~4.45 TB (4.4 TB nangate45 + 50 GB gf22fdx)
+    uncompressed_bytes:
+
+# ============================================================
+# INTEROPERABILITY
+# ============================================================
+interoperability:
+  data_structure:
+    formats:
+      - JSON    # per-design synthesis report (Config, QOFRSummary, AreaReport, DesignSummary, LayerResults)
+      - tar.gz  # per-design Catapult project archive (RTL, HLS logs, intermediate synthesis artifacts)
+    encoding: UTF-8
+    schema_version: "1.0"
+    modalities:
+      - tabular
+    features:
+      - name: latency_cycles
+        data_type: int
+        unit: clock cycles
+        description: Pipeline latency from input valid to output valid at 5 ns clock.
+      - name: thruput_cycles
+        data_type: int
+        unit: clock cycles
+        description: Initiation interval (throughput) — minimum cycles between successive inputs.
+      - name: total_area
+        data_type: float
+        unit: µm²
+        description: Total synthesised circuit area (TotalAreaScore from Catapult AreaReport).
+      - name: TotalReg
+        data_type: float
+        unit: µm²
+        description: Total register area component.
+      - name: DataPath
+        data_type: float
+        unit: µm²
+        description: Datapath area (MUX + FUNC + LOGIC + BUFFER + MEM + ROM + REG).
+      - name: MUX
+        data_type: float
+        unit: µm²
+        description: Multiplexer area contribution.
+      - name: FUNC
+        data_type: float
+        unit: µm²
+        description: Functional (combinational logic) area contribution.
+      - name: n_layers
+        data_type: int
+        description: Number of dense (QDense) layers in the network.
+      - name: layer_sizes
+        data_type: list[int]
+        description: Neuron count per layer (input dim → l1 → … → output dim).
+      - name: activations
+        data_type: list[str]
+        description: Activation function per layer (relu | sigmoid | tanh).
+      - name: bitwidth
+        data_type: int
+        unit: bits
+        description: Fixed-point weight precision W in ac_fixed<W,3> (W ∈ {4,6,8,10,12,14}).
+      - name: reuse_factor
+        data_type: int
+        description: Catapult HLS ReuseFactor (1=fully unrolled, 4/8/16=partially reused).
+      - name: tech
+        data_type: str
+        description: Target ASIC technology (nangate45 | gf22fdx).
+    splits: []
+    language: not_applicable
+    spatial_coverage:
+    temporal_coverage:
+
+  provenance:
+    was_generated_by: >-
+      Automated Catapult HLS 2026.1 (Siemens EDA) synthesis of hls4ml-generated
+      C++ accelerator designs on NERSC Perlmutter, orchestrated by GNU parallel
+      SLURM jobs using wa-hls4ml-search.
+    source_data:
+      - name: wa-hls4ml FPGA/Vivado Dataset
+        identifier:
+          type: url
+          value: https://huggingface.co/datasets/fastmachinelearning/wa-hls4ml
+        relationship: references
+    processing_steps: >-
+      (1) Neural network architecture parameters sampled via Cartesian enumeration
+      (1–3 layers) or Latin Hypercube Sampling (4–10 layers; GF22FDX 2–3 layers).
+      (2) hls4ml C++ HLS project generated per design with QKeras quantisation
+      (ac_fixed<W,3> weights, auto-precision for activations).
+      (3) Catapult HLS synthesises to RTL, targeting 5 ns clock; reports written
+      to JSON; synthesis outputs bundled in tar.gz per design.
+      (4) Failed runs retried with GNU parallel --resume-failed; hard failures
+      (missing tarballs) documented in failed_designs.txt per run group.
+      (5) Reports aggregated into per-run JSON collections; tarballs archived flat
+      under nangate45/ or gf22fdx/ on CFS.
+    instrumentation: >-
+      Catapult HLS 2026.1 (Siemens EDA); Nangate 45 nm Open Cell Library
+      (nangate-45nm_beh); GlobalFoundries 22FDX FD-SOI standard-cell library
+      (GF22FDX_SC8T_104CPP_BASE_CSC24R_TT_0P90V_0P00V_0P00V_0P00V_25C_dc).
+    simulation_details: >-
+      Fixed synthesis settings across all designs: Clock=5 ns (200 MHz),
+      ClockUncertainty=12.5%, IOType=io_stream, Strategy=Latency, BramFactor=0.
+      Weight interface: programmable (weights/biases passed as top-level function
+      arguments). ReuseFactor varies: 1 (fully unrolled), 4, 8, 16.
+    software_environment:
+      os: "RHEL 8 (NERSC Perlmutter)"
+      compiler:
+      container: "Apptainer container with Catapult 2026.1 (Siemens)"
+      hpc_environment: >-
+        NERSC Perlmutter CPU nodes; SLURM 3-node × 100-slot GNU parallel batches;
+        AmSC project account amsc011; QoS express_amsc (6h) or regular (48h).
+      notes: >-
+        Python venv at $SCRATCH/venv_hls4ml (hls4ml, QKeras, tensorflow, scipy).
+        Orchestration scripts: wa-hls4ml-search/slurm/examples/ on branch
+        Catapult-ASIC-dev. License server: 300 Catapult seats (fasic-admin1.fnal.gov).
+
+  dates:
+    data_collection_start: "2026-05-04"
+    data_collection_end:
+    issued:
+    modified: "2026-06-25"
+
+  semantic_layer:
+    schema_url:
+    semantic_context: []
+
+  related_resources:
+    datasets:
+      - name: "wa-hls4ml FPGA/Vivado Results Dataset"
+        identifier:
+          type: url
+          value: https://huggingface.co/datasets/fastmachinelearning/wa-hls4ml
+        relationship: is_based_on
+      - name: "wa-hls4ml FPGA/Vivado Projects Dataset"
+        identifier:
+          type: url
+          value: https://huggingface.co/datasets/fastmachinelearning/wa-hls4ml-projects
+        relationship: references
+
+    publications:
+      - type: arxiv
+        value: "2511.05615"
+        relationship: references
+
+    software:
+      - name: wa-hls4ml-search
+        version: "Catapult-ASIC-dev branch"
+        identifier:
+          type: url
+          value: https://github.com/GiuseppeDiGuglielmo/wa-hls4ml-search
+        role:
+          - Software
+        relationship: used_to_create
+      - name: hls4ml
+        identifier:
+          type: url
+          value: https://github.com/fastmachinelearning/hls4ml
+        role:
+          - Software
+        relationship: used_to_create
+      - name: QKeras
+        identifier:
+          type: url
+          value: https://github.com/google/qkeras
+        role:
+          - Software
+        relationship: used_to_create
+
+  domain_metadata:
+    - name: "HLS Synthesis Metadata"
+      description: "Domain-specific metadata for High-Level Synthesis (HLS) ASIC design space exploration."
+      science_domain: "Mathematics and Computing"
+      fields:
+        clock_period_ns:
+          field_value: "5.0"
+          data_type: float
+          unit: ns
+          description: Target clock period for all synthesis runs.
+        technology_nodes:
+          field_value: "nangate45, gf22fdx"
+          data_type: string
+          description: ASIC technology nodes covered.
+        hls_backend:
+          field_value: "Catapult HLS 2026.1 (Siemens EDA)"
+          data_type: string
+          description: HLS tool used for synthesis.
+        nn_type:
+          field_value: "Fully-connected (dense) feedforward, quantized (QKeras QDense)"
+          data_type: string
+          description: Type of neural network architectures synthesised.
+        reuse_factors:
+          field_value: "1, 4, 8, 16"
+          data_type: string
+          description: Set of ReuseFactor values swept for each architecture.
+        bitwidths:
+          field_value: "4, 6, 8, 10, 12, 14"
+          data_type: string
+          unit: bits
+          description: Fixed-point weight precision values swept (W in ac_fixed<W,3>).
+        sampling_strategy:
+          field_value: "Cartesian product (1–3 layers); Latin Hypercube Sampling (4–10 layers; GF22FDX 2–3 layers)"
+          data_type: string
+          description: Architecture sampling methodology per layer-count group.
+
+# ============================================================
+# REUSABILITY
+# ============================================================
+reusability:
+  license:
+    spdx_id:  # TBD — no license assigned; dataset not publicly distributed
+    name: "All Rights Reserved"
+    url:
+    known_contractual_rights: "Government has unlimited rights"
+    notes: >-
+      No public license assigned. Access restricted to authorized NERSC AmSC
+      project (amsc011) users. License selection pending Siemens EDA Catapult
+      HLS EULA review and DOE/Fermilab IP policy decision prior to any public
+      release.
+
+  stewardship:
+    level: Project_Managed
+    maintainer:
+      type: person
+      person:
+        given_name: Giuseppe
+        family_name: Di Guglielmo
+        email: giuseppe.diguglielmo@gmail.com
+        affiliation:
+          name: Columbia University
+          ror_id: https://ror.org/00hj8s172
+    update_frequency: Ad_Hoc
+    retention_policy: "Retained on NERSC CFS (amsc011) indefinitely; tarballed to HPSS for long-term archival."
+    versioning_strategy: "Major version increment when new technology nodes or qualitatively different topology groups are added; minor version for additional sweep coverage."
+
+  data_quality:
+    completeness: >-
+      Cartesian sweeps (1–3 layers) verified complete with no missing or duplicate
+      designs. LHS and GF22FDX sweeps contain a small number of hard synthesis
+      failures (absent outputs) that are documented and excluded from
+      training-eligible counts.
+    known_issues: >-
+      (1) GF22FDX 2-layer Pass 1 under-samples bitwidths {6,10,14} and size=64.
+      (2) A small number of hard Catapult synthesis failures exist in LHS and
+      GF22FDX runs; affected designs are absent from the output archive.
+      (3) 1,341 legacy fixed-weight designs exist in the archive but are excluded
+      from training-eligible counts.
+      (4) Catapult AutoCompact may reduce distinct RTL outputs by ~3% for 3-layer
+      designs; synthesis parameter space is complete as enumerated.
+    validation_methods: >-
+      Design completeness verified by cross-checking synthesised output counts
+      against expected parameter-space sizes. LHS candidate files retained for
+      reproducibility.
+    noise_characteristics: >-
+      Synthesis results are deterministic given the same Catapult version, library,
+      and input C++. No measurement noise; minor variation may occur due to tool
+      internal heuristics but has not been measured.
+    uncertainty_notes: "No stochastic uncertainty in synthesis outputs. Variability arises only from different ReuseFactor or architecture parameters."
+    missing_data_codes:
+      - code: "absent tarball"
+        description: "Hard synthesis failure; design stem present in joblist but no .tar.gz produced."
+
+  citation:
+    preferred_citation:
+      author: >-
+        Hawks, Benjamin and Weitz, Jason and Demler, Dmitri and Tame-Narvaez, Karla
+        and Plotnikov, Dennis and Rahimifar, Mohammad Mehdi and Ezzaoui Rahali, Hamza
+        and Therrien, Audrey C. and Sproule, Donovan and Khoda, Elham E.
+        and Smith, Keegan A. and Marroquin, Russell and Di Guglielmo, Giuseppe
+        and Tran, Nhan and Duarte, Javier and Loncar, Vladimir
+      title: "wa-hls4ml: A Benchmark and Surrogate Models for hls4ml Resource and Latency Estimation"
+      year: "2025"
+      howpublished: "arXiv preprint"
+      url: https://arxiv.org/abs/2511.05615
+      eprinttype: arxiv
+      eprint: "2511.05615"
+
+  integrity:
+    checksum_available: "No"
+    fixity_policy: "NERSC CFS provides RAID storage; long-term copies archived to HPSS via htar per-run tarballs."
+
+# ============================================================
+# GOVERNED USE
+# ============================================================
+governed_use:
+  use_governance:
+    current_use: >-
+      ML surrogate model training and evaluation for ASIC latency, throughput,
+      and area prediction in the wa-hls4ml project.
+    intended_use: >-
+      Training and evaluating graph neural network and transformer surrogate models
+      that predict Catapult HLS synthesis outcomes (latency, area) for arbitrary
+      quantized dense neural network architectures without invoking the HLS tool.
+    permitted_use: >-
+      ASIC design-space exploration; benchmark for HLS resource estimation methods;
+      neural architecture search targeting ASIC deployment; educational use in
+      hardware-aware ML courses.
+    out_of_scope_use: >-
+      Real-time production silicon sign-off; timing closure at clock targets other
+      than 5 ns; technology nodes not in this dataset.
+    prohibited_use: >-
+      Any use in classified or export-controlled contexts without appropriate review.
+
+  non_sensitivity_governance_metadata:
+    export_control:
+      export_control_status: "No"
+      export_control_basis: not_applicable
+      foreign_national_access_status: Allowed
+
+    privacy:
+      privacy_status: "No"
+      pii_status: "No"
+      phi_status: "No"
+      privacy_control_basis:
+        - not_applicable
+
+    rights_release_records:
+      ip_restriction_type: None
+      agreement_required: "No"
+      public_release_status: "Pending"
+      record_status: "Federal_Record"
+
+  compliance:
+    doe_data_management_plan: "Unknown"
+    osti_elink2_metadata_compliant: "Unknown"
+    irb_approved: "not_applicable"
+
+  review_provenance_companion: []
+
+# ============================================================
+# AI USABILITY
+# ============================================================
+ai_usability:
+  ai_usage:
+    training_use_status: "Yes"
+    training_use_conditions: >-
+      Cite the wa-hls4ml paper (arXiv:2511.05615) when using this dataset for
+      model training or publication.
+    inference_use_status: "Yes"
+    inference_use_conditions: >-
+      Intended as training data; inference use (e.g., as a lookup table or
+      validation benchmark) is permitted with attribution.
+    evaluation_use_status: "Yes"
+    evaluation_use_conditions: >-
+      Benchmark evaluations of HLS resource prediction methods should cite the
+      wa-hls4ml paper.
+    restrictions: >-
+      Not suitable for timing sign-off or production silicon design without
+      additional full-flow verification.
+    bias_risks: >-
+      Architecture space is not uniformly distributed across the full feasible
+      design space: 1–3-layer designs use exhaustive Cartesian coverage while
+      4–10-layer designs use LHS with N=2,500–10,000; GF22FDX coverage is sparser
+      than nangate45. Models trained on this dataset may under-perform for
+      architectures outside the sampled distribution (e.g., very deep networks or
+      extreme neuron counts).
+    safety_considerations: "None — synthesis results contain no sensitive or safety-critical information."
+    human_review_required: "No"

@@ -213,7 +213,6 @@ logs/*
 !logs/.gitkeep
 node_history.csv
 catapult_native/
-data-cards/
 
 # Editor artifacts
 *.swp
