@@ -42,9 +42,15 @@ nano Perlmutter_scripts/.env
 
 ### 3. Create your Python virtual environment
 
+Perlmutter's default Python does not support TF 2.11, so load the right module
+first:
+
 ```bash
+module load python/3.10-24.1.0
+python3 --version  # should show 3.10.x
 python3 -m venv $SCRATCH/venv_hls4ml
 source $SCRATCH/venv_hls4ml/bin/activate
+pip install --upgrade pip
 pip install -r requirements.venv.txt
 ```
 

@@ -5,6 +5,7 @@ import glob
 import sys
 import uuid
 import tarfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from tensorflow.keras.models import model_from_json
 from qkeras.utils import _add_supported_quantized_objects
@@ -61,8 +62,9 @@ def _load_license_config(path):
     }
 
     Returns:
-        tuple: (total_licenses: int, lm_license_file: str)
+        tuple: (total_licenses: int, lm_license_file: str, servers: list)
                lm_license_file is in FlexLM format: "port@host1:port@host2:..."
+               servers is the raw list of {"host", "port", "licenses"} dicts.
     """
     with open(path, "r") as f:
         cfg = json.load(f)
@@ -78,7 +80,7 @@ def _load_license_config(path):
     if total_licenses <= 0:
         raise ValueError(f"Total licenses must be > 0, got {total_licenses}")
 
-    return total_licenses, lm_license_file
+    return total_licenses, lm_license_file, servers
 
 
 def _make_tarfile(output_path, source_dir, extra_files=None, exclude_dirs=None):
@@ -110,7 +112,7 @@ def _make_run_dir(output_root):
     return run_dir
 
 
-def _generate_models(batch_range, batch_size, config_params_arg, output_dir):
+def _generate_models(batch_range, batch_size, config_params_arg, output_dir, cartesian=False):
     os.makedirs(output_dir, exist_ok=True)
     repo_dir = os.path.dirname(os.path.abspath(__file__))
     gen_models_script = os.path.join(repo_dir, "gen_models.py")
@@ -118,13 +120,18 @@ def _generate_models(batch_range, batch_size, config_params_arg, output_dir):
     cmd = [
         "python",
         gen_models_script,
-        "--batch_range",
-        str(batch_range),
-        "--batch_size",
-        str(batch_size),
         "--output_dir",
         output_dir,
     ]
+
+    if cartesian:
+        cmd.append("--cartesian")
+        logger.info(f"Generating models via subprocess (cartesian): output_dir={output_dir}")
+    else:
+        cmd += ["--batch_range", str(batch_range), "--batch_size", str(batch_size)]
+        logger.info(
+            f"Generating models via subprocess: batch_range={batch_range}, batch_size={batch_size}, output_dir={output_dir}"
+        )
 
     if config_params_arg:
         if not os.path.isfile(config_params_arg):
@@ -134,9 +141,6 @@ def _generate_models(batch_range, batch_size, config_params_arg, output_dir):
         cmd.extend(["--config", config_params_arg])
         logger.info(f"Loaded configuration from {config_params_arg}")
 
-    logger.info(
-        f"Generating models via subprocess: batch_range={batch_range}, batch_size={batch_size}, output_dir={output_dir}"
-    )
     subprocess.run(cmd, check=True)
 
 def _run_catapult_flow(hls_dir, shell_script=None, flow_tcl=None, cfg_json=None):
@@ -150,69 +154,117 @@ def _run_catapult_flow(hls_dir, shell_script=None, flow_tcl=None, cfg_json=None)
     if cfg_json is None:
         cfg_json = ""
 
-    # Full control comes from cfg_json (CatapultDataflowConfig).
-    tcl_cmd = (
-        f"set model_path {{{hls_dir_abs}/keras_model.h5}}; "
-        f"set out_dir {{{hls_dir_abs}/catapult_native}}; "
-        f"set cfg_json {{{cfg_json}}}; "
-        "set run_synth 1; "
-        f"dofile {{{flow_tcl}}}; exit"
-    )
+    # Write TCL commands to a file to avoid shell quoting issues with --cmd.
+    tcl_script = os.path.join(hls_dir_abs, "_run.tcl")
+    with open(tcl_script, "w") as f:
+        f.write(f"set model_path {{{hls_dir_abs}/keras_model.h5}}\n")
+        f.write(f"set out_dir {{{hls_dir_abs}/catapult_native}}\n")
+        f.write(f"set cfg_json {{{cfg_json}}}\n")
+        f.write("set run_synth 1\n")
+        f.write("set auto_exit 0\n")
+        f.write(f"dofile {{{flow_tcl}}}\n")
 
-    subprocess.run(
-        [
-            shell_script,
-            "--work-dir", hls_dir_abs,
-            "--cmd", tcl_cmd,
-        ],
-        cwd=hls_dir_abs,
-        check=True,
-    )
+    import random, time
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(
+            [
+                shell_script,
+                "--work-dir", hls_dir_abs,
+                "--cmd", f"source {{{tcl_script}}}; exit",
+            ],
+            cwd=hls_dir_abs,
+        )
+        if result.returncode == 0:
+            return
+        wait = random.uniform(30, 90) * attempt
+        if attempt < max_attempts:
+            logger.warning(
+                f"Catapult exited with code {result.returncode} "
+                f"(attempt {attempt}/{max_attempts}), retrying in {wait:.0f}s..."
+            )
+            time.sleep(wait)
+    raise subprocess.CalledProcessError(result.returncode, result.args)
 
 
-def _collect_reports(run_dir):
-    """Parse all completed builds in run_dir and create report JSONs + tarballs."""
-    build_root = os.path.join(run_dir, "build")
+def _process_single_build(catapult_dir, run_dir):
+    """Parse report and create tarball for one completed synthesis.
+
+    Idempotent: skips steps whose output files already exist.
+    Returns True if the report was successfully parsed (or already existed).
+    """
+    tag = os.path.basename(os.path.dirname(catapult_dir))
     raw_report_dir = os.path.join(run_dir, "data", "reports", "raw")
     tar_dir = os.path.join(run_dir, "tarballs")
-
     os.makedirs(raw_report_dir, exist_ok=True)
     os.makedirs(tar_dir, exist_ok=True)
 
-    logger.info("Collecting synthesis reports...")
-    build_dirs = sorted(glob.glob(os.path.join(build_root, "*", "catapult_native")))
-    parsed_count = 0
-    for catapult_dir in build_dirs:
-        tag = os.path.basename(os.path.dirname(catapult_dir))
-        raw_json_path = os.path.join(raw_report_dir, f"{tag}.json")
+    raw_json_path = os.path.join(raw_report_dir, f"{tag}.json")
+    tar_path = os.path.join(tar_dir, f"{tag}.tar.gz")
 
-        if os.path.exists(raw_json_path):
-            logger.info(f"Report already exists for {tag}, skipping.")
-            parsed_count += 1
-            continue
-
+    if not os.path.exists(raw_json_path):
         report = parse_catapult_report(catapult_dir)
         if report is None:
             logger.warning(f"Failed to parse report for {tag}")
-            continue
-
+            return False
         with open(raw_json_path, "w") as f:
             json.dump(report, f, indent=2)
+        logger.info(f"Saved report for {tag} → {raw_json_path}")
 
+    if not os.path.exists(tar_path):
         model_json_path = os.path.join(os.path.dirname(catapult_dir), "model.json")
-        tar_path = os.path.join(tar_dir, f"{tag}.tar.gz")
         _make_tarfile(
             tar_path,
             catapult_dir,
             extra_files=[(model_json_path, "model.json"), (raw_json_path, "report.json")],
             exclude_dirs=["SIF"],
         )
-
-        parsed_count += 1
-        logger.info(f"Saved report for {tag} → {raw_json_path}")
         logger.info(f"Tarball: {tar_path}")
 
+    return True
+
+
+def _collect_reports(run_dir):
+    """Parse all completed builds in run_dir and create report JSONs + tarballs.
+
+    Skips builds already processed on compute nodes (both files will exist).
+    """
+    build_root = os.path.join(run_dir, "build")
+    logger.info("Collecting synthesis reports...")
+    build_dirs = sorted(glob.glob(os.path.join(build_root, "*", "catapult_native")))
+    parsed_count = sum(
+        _process_single_build(catapult_dir, run_dir) for catapult_dir in build_dirs
+    )
+    raw_report_dir = os.path.join(run_dir, "data", "reports", "raw")
     logger.info(f"Collected {parsed_count}/{len(build_dirs)} reports to {raw_report_dir}")
+
+
+def _prepare_single_model(task):
+    model_name, model_desc, data_models, build_root, base_cfg, shell_script, flow_tcl, co = task
+    tag = model_name
+    tag_data_dir = os.path.abspath(os.path.join(data_models, tag))
+    tag_build_dir = os.path.abspath(os.path.join(build_root, tag))
+    os.makedirs(tag_data_dir, exist_ok=True)
+    os.makedirs(tag_build_dir, exist_ok=True)
+
+    model = model_from_json(model_desc, custom_objects=co)
+    h5_data = os.path.join(tag_data_dir, "keras_model.h5")
+    model.save(h5_data, include_optimizer=False)
+
+    with open(os.path.join(tag_build_dir, "model.json"), "w") as f:
+        f.write(model_desc)
+    shutil.copy2(h5_data, os.path.join(tag_build_dir, "keras_model.h5"))
+
+    cfg = base_cfg.override(output_dir=os.path.join(tag_build_dir, "catapult_native"))
+    cfg_json_path = os.path.join(tag_data_dir, "dataflow_config.json")
+    cfg.save_json(cfg_json_path)
+
+    return _format_job_line(
+        hls_dir=tag_build_dir,
+        shell_script=shell_script,
+        flow_tcl=flow_tcl,
+        cfg_json=cfg_json_path,
+    )
 
 
 def main(args):
@@ -238,7 +290,8 @@ def main(args):
     os.makedirs(tar_dir, exist_ok=True)
     os.makedirs(build_root, exist_ok=True)
 
-    _generate_models(args.batch_range, args.batch_size, args.gen_model_config_json, generated_models_dir)
+    _generate_models(args.batch_range, args.batch_size, args.gen_model_config_json, generated_models_dir,
+                     cartesian=args.cartesian)
 
     batch_files = sorted(glob.glob(os.path.join(generated_models_dir, "dense_latency_fast_batch_*.json")))
     assert batch_files, f"[ERROR] No generated batch JSON files found in {generated_models_dir}"
@@ -256,6 +309,7 @@ def main(args):
 
     co = {}
     _add_supported_quantized_objects(co)
+    n_workers = min(16, os.cpu_count() or 8)
     for batch_file in batch_files:
         print(f"Found JSON File, loading: {batch_file}")
 
@@ -266,47 +320,15 @@ def main(args):
 
         with open(batch_file, "r") as file:
             models = json.load(file)
-            print(f"[INFO] Loaded {len(models)} models from {batch_file}")
+        print(f"[INFO] Preparing {len(models)} models in parallel (workers={n_workers})...")
 
-        for model_name, model_desc in models.items():
-            tag = model_name
-            model = model_from_json(model_desc, custom_objects=co)
-
-            # Portable artifacts
-            tag_data_dir = os.path.abspath(os.path.join(data_models, tag))
-            os.makedirs(tag_data_dir, exist_ok=True)
-
-            # Build artifacts (Catapult project)
-            tag_build_dir = os.path.abspath(os.path.join(build_root, tag))
-            os.makedirs(tag_build_dir, exist_ok=True)
-
-            print(f"[INFO] TAG={tag}")
-            print(f"[INFO] data:  {tag_data_dir}")
-            print(f"[INFO] build: {tag_build_dir}")
-
-            h5_data = os.path.join(tag_data_dir, "keras_model.h5")
-            model.save(h5_data, include_optimizer=False)
-
-            model_json_path = os.path.join(tag_build_dir, "model.json")
-            with open(model_json_path, "w") as f:
-                f.write(model_desc)
-
-            # Copy .h5 into build dir for Catapult
-            h5_build = os.path.join(tag_build_dir, "keras_model.h5")
-            shutil.copy2(h5_data, h5_build)
-
-            cfg = base_cfg.override(
-                output_dir=os.path.join(tag_build_dir, "catapult_native"),
-            )
-            cfg_json_path = os.path.join(tag_data_dir, "dataflow_config.json")
-            cfg.save_json(cfg_json_path)
-
-            job_lines.append(_format_job_line(
-                hls_dir=tag_build_dir,
-                shell_script=args.catapult_shell,
-                flow_tcl=args.flow_tcl,
-                cfg_json=cfg_json_path,
-            ))
+        tasks = [
+            (name, desc, data_models, build_root, base_cfg,
+             args.catapult_shell, args.flow_tcl, co)
+            for name, desc in models.items()
+        ]
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            job_lines.extend(executor.map(_prepare_single_model, tasks))
 
 
     # Write joblist (for both parallel and sequential runs)
@@ -315,18 +337,24 @@ def main(args):
         jf.write("\n".join(job_lines) + "\n")
     logger.info(f"Wrote {len(job_lines)} jobs to {joblist_path}")
 
+    if args.prepare_only:
+        logger.info("--prepare-only: model generation complete, exiting before synthesis.")
+        logger.info(f"Run dir : {run_dir}")
+        logger.info(f"Joblist : {joblist_path} ({len(job_lines)} jobs)")
+        return
+
     # --- Synthesis phase ---
     if args.slurm:
         # SLURM job array mode
         if not args.license_config:
             raise SystemExit("ERROR: --slurm requires --license_config")
-        total_licenses, lm_license_file = _load_license_config(args.license_config)
+        total_licenses, lm_license_file, servers = _load_license_config(args.license_config)
         logger.info(f"SLURM mode: {total_licenses} licenses, LM_LICENSE_FILE={lm_license_file}")
         job_array.submit(args, run_dir, joblist_path, job_lines, total_licenses,
-                         lm_license_file)
+                         lm_license_file, servers)
     elif args.license_config:
         # Parallel mode via GNU parallel
-        total_licenses, lm_license_file = _load_license_config(args.license_config)
+        total_licenses, lm_license_file, servers = _load_license_config(args.license_config)
         logger.info(f"Parallel mode: {total_licenses} licenses, LM_LICENSE_FILE={lm_license_file}")
 
         env = os.environ.copy()
@@ -390,6 +418,10 @@ def create_parser():
     parser.add_argument('--flow_config_json', type=str, default=None, help='Path to CatapultDataflowConfig JSON')
     parser.add_argument('--license_config', type=str, default=None, help='Path to license_servers.json. Enables parallel synthesis via GNU parallel.')
     parser.add_argument('--run-single-job', type=str, default=None, metavar='JOB_LINE', help='Run a single synthesis job from a tab-separated job line (used internally by GNU parallel)')
+    parser.add_argument('--cartesian', action='store_true',
+        help='Enumerate the full Cartesian product of the design space instead of random sampling')
+    parser.add_argument('--prepare-only', action='store_true',
+        help='Generate models and write joblist.txt, then exit without running synthesis.')
 
     # SLURM job array options (defined in slurm/cli.py — see slurm/README.md)
     slurm_cli.add_slurm_args(parser)
@@ -406,8 +438,17 @@ if __name__ == "__main__":
         sys.exit(0)
     elif args.run_single_job is not None:
         job_kwargs = _parse_job_line(args.run_single_job)
-        logger.info(f"Running single job: {job_kwargs['hls_dir']}")
+        hls_dir = os.path.abspath(job_kwargs['hls_dir'])
+        run_dir = os.path.dirname(os.path.dirname(hls_dir))
+        tag = os.path.basename(hls_dir)
+        tar_path = os.path.join(run_dir, "tarballs", f"{tag}.tar.gz")
+        if os.path.exists(tar_path):
+            logger.info(f"Already done (tarball exists): {tar_path}")
+            sys.exit(0)
+        logger.info(f"Running single job: {hls_dir}")
         _run_catapult_flow(**job_kwargs)
+        catapult_dir = os.path.join(hls_dir, "catapult_native")
+        _process_single_build(catapult_dir, run_dir)
     else:
         main(args)
 

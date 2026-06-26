@@ -1,0 +1,29 @@
+{
+    "dense_lb": 256,
+    "dense_ub": 256,
+    "conv_filters_ub": 0,
+    "conv_init_size_lb": 256,
+    "conv_init_size_ub": 256,
+
+    "q_chance": 1.0,
+    "flatten_chance": 0.0,
+    "pooling_chance": 0.0,
+
+    "weight_int_width": 2,
+    "activ_int_width": 2,
+    "max_bit_width_po2": 3,
+
+    "activation_rate": 1.0,
+
+    "probs": {
+        "activations": [1, 0, 0, 0],
+        "dense_layers": [1],
+        "conv_layers": [0, 0, 0],
+        "start_layers": [0, 0, 1, 0, 0],
+        "padding": [1, 0],
+        "pooling": [1, 0]
+    },
+
+    "min_layer_count": 2,
+    "max_layer_count": 2
+}
