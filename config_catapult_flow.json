@@ -2,7 +2,7 @@
   "num_samples": 2,
   "granularity": "name",
   "default_precision": "ac_fixed<16,6>",
-  "default_reuse_factor": 4,
+  "default_reuse_factor": 16,
   "max_precision": null,
 
   "output_dir": "my-hls-test",
@@ -11,7 +11,7 @@
   "namespace": null,
 
   "tech": "asic",
-  "asiclibs": "GF22FDX_SC8T_104CPP_BASE_CSC24R_TT_0P90V_0P00V_0P00V_0P00V_25C_dc",
+  "asiclibs": "nangate-45nm_beh",
   "asicfifo": "hls4ml_lib.mgc_pipe_mem",
   "asicram": "ccs_sample_mem.ccs_ram_sync_1R1W",
 
@@ -38,11 +38,10 @@
   "BuildBUP": 0,
   "BUPWorkers": 0,
   "LaunchDA": 0,
-  "startup": "/global/homes/g/gdg/research/projects/genesis/gf22nm-lib/libsetup.tcl",
+  "startup": "",
 
   "write_weights_txt": 1,
   "write_tar": 0,
 
-  "min_fifo_depth": 16,
-  "BramFactor": 0
+  "min_fifo_depth": 16
 }

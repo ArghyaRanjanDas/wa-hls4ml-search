@@ -111,9 +111,6 @@ def main():
         **cfg_kwargs,
     )
 
-    if cfg.BramFactor is not None:
-        config_ccs['HLSConfig']['Model']['BramFactor'] = cfg.BramFactor
-
     hls_model = catapult_ai_nn.generate_dataflow(model, config_ccs)
 
     # Post-gen patch (removes need for TCL regsub block)

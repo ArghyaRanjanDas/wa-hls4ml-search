@@ -1,8 +1,7 @@
 {
   "_comment": "Template — copy to license_servers_perlmutter.json (gitignored) and edit if needed.",
-  "_doc": "On Perlmutter compute nodes, fasic-135413.fnal.gov:1717 and fasic-admin1.fnal.gov:1717 are reachable directly (no SSH tunnel needed). Use this with `python iter_manager_catapult.py --slurm --license_config license_servers_perlmutter.json ...`",
+  "_doc": "On Perlmutter compute nodes, fasic-135413.fnal.gov:1717 is reachable directly (no SSH tunnel needed). The CatAIhls4ml_c license feature has 105 seats. Use this with `python iter_manager_catapult.py --slurm --license_config license_servers_perlmutter.json ...`",
   "servers": [
-    {"host": "fasic-135413.fnal.gov", "port": 1717, "licenses": 100},
-    {"host": "fasic-admin1.fnal.gov", "port": 1717, "licenses": 100}
+    {"host": "fasic-135413.fnal.gov", "port": 1717, "licenses": 100}
   ]
 }

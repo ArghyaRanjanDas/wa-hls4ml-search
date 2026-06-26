@@ -479,115 +479,10 @@ def get_default_config():
         'total_layers': 5
     }
 
-def _dense_sizes(lb, ub):
-    return [2**i for i in range(0, 20) if lb <= 2**i <= ub]
-
-
-def _active_activations(probs, names):
-    return [n for n, p in zip(names, probs) if p > 0]
-
-
-def _build_dense_model(layer_configs, bitwidth, config_params, input_size=None):
-    """Build a QKeras dense-only model from explicit per-layer (size, activation) pairs.
-
-    input_size: override the input feature dimension (defaults to first layer's size).
-    """
-    w_int = config_params.get('weight_int_width', 1)
-    a_int = config_params.get('activ_int_width', 1)
-    in_dim = input_size if input_size is not None else layer_configs[0][0]
-    inputs = Input(shape=(in_dim,))
-    x = inputs
-    for size, activ in layer_configs:
-        x = QDense(size, kernel_quantizer=quantized_bits(bitwidth, w_int))(x)
-        x = QActivation(f'quantized_{activ}({bitwidth},{a_int})')(x)
-    return Model(inputs=inputs, outputs=x)
-
-
-def _write_batch(model_dict, output_dir, batch_i):
-    path = os.path.join(output_dir, f"dense_latency_fast_batch_{batch_i}.json")
-    with open(path, "w") as f:
-        json.dump(model_dict, f, indent=2)
-
-
-def cartesian_exec(config_params, output_dir, chunk_size=1000):
-    """Enumerate every unique dense-NN configuration and write batch JSON files.
-
-    Dispatches on config keys:
-    - 'layers' present → general mode: independent input size + per-layer independent
-      sizes and activations, even bitwidths in [bitwidth_lb, bitwidth_ub].
-      Single-layer is a special case with one entry in 'layers'.
-    - otherwise → legacy multi-layer mode: coupled sizes, power-of-2 bitwidths
-      up to max_bit_width_po2 (supports configs/model_sweeps/config_dense_1to3layers.json style).
-    """
-    import itertools
-
-    activs = _active_activations(
-        config_params['probs']['activations'],
-        ["relu", "tanh", "sigmoid", "softmax"],
-    )
-
-    if 'layers' in config_params:
-        # General mode: independent input size, per-layer independent sizes
-        input_sizes = _dense_sizes(config_params['input_lb'], config_params['input_ub'])
-        bitwidths   = (config_params['bitwidths'] if 'bitwidths' in config_params
-                       else list(range(config_params['bitwidth_lb'], config_params['bitwidth_ub'] + 1, 2)))
-        n_layers    = len(config_params['layers'])
-
-        layer_options = [
-            list(itertools.product(_dense_sizes(l['size_lb'], l['size_ub']), activs))
-            for l in config_params['layers']
-        ]
-        all_combos = list(itertools.product(input_sizes, *layer_options, bitwidths))
-        logger.info(f"Cartesian ({n_layers}-layer): {len(all_combos)} designs "
-                    f"({len(input_sizes)} in"
-                    + "".join(f" × {len(lo)} layer{i+1}" for i, lo in enumerate(layer_options))
-                    + f" × {len(bitwidths)} bw)")
-
-        model_dict, batch_i, total = {}, 0, 0
-        for idx, combo in enumerate(tqdm(all_combos, desc="Building models")):
-            in_size      = combo[0]
-            layer_configs = list(combo[1:-1])
-            bitwidth     = combo[-1]
-            model = _build_dense_model(layer_configs, bitwidth, config_params, input_size=in_size)
-            model_dict[f"dense_{n_layers}l_{idx}"] = model.to_json()
-            total += 1
-            if len(model_dict) >= chunk_size:
-                _write_batch(model_dict, output_dir, batch_i)
-                model_dict, batch_i = {}, batch_i + 1
-    else:
-        # Legacy multi-layer mode: coupled sizes, power-of-2 bitwidths
-        sizes     = _dense_sizes(config_params['dense_lb'], config_params['dense_ub'])
-        bitwidths = [2**i for i in range(2, config_params['max_bit_width_po2'] + 1)]
-        n_min     = config_params['min_layer_count']
-        n_max     = config_params['max_layer_count']
-
-        layer_choices = list(itertools.product(sizes, activs))
-        all_combos = [
-            (list(combo), bitwidth)
-            for n_layers in range(n_min, n_max + 1)
-            for combo in itertools.product(layer_choices, repeat=n_layers)
-            for bitwidth in bitwidths
-        ]
-        logger.info(f"Cartesian (legacy multi-layer): {len(all_combos)} designs total")
-
-        model_dict, batch_i, total = {}, 0, 0
-        for idx, (layer_config, bitwidth) in enumerate(tqdm(all_combos, desc="Building models")):
-            model = _build_dense_model(layer_config, bitwidth, config_params)
-            model_dict[f"dense_latency_fast_{idx}"] = model.to_json()
-            total += 1
-            if len(model_dict) >= chunk_size:
-                _write_batch(model_dict, output_dir, batch_i)
-                model_dict, batch_i = {}, batch_i + 1
-
-    if model_dict:
-        _write_batch(model_dict, output_dir, batch_i)
-    logger.info(f"Cartesian: wrote {total} designs in {batch_i + 1} file(s)")
-
-
 def create_parser():
     """
     Create and configure the argument parser.
-
+    
     Returns:
         argparse.ArgumentParser: Configured argument parser
     """
@@ -596,11 +491,11 @@ def create_parser():
     parser.add_argument('-b', '--batch_range', type=int, default=1, help='Number of files to generate')
     parser.add_argument('-s', '--batch_size', type=int, default=50, help='Number of models per file')
     parser.add_argument('-o', '--output_dir', type=str, default='dense_resource_test', help='Output directory')
-    parser.add_argument('--cartesian', action='store_true',
-        help='Enumerate all configurations via Cartesian product instead of random sampling')
     return parser
 
+# Initialize Ray — cap CPUs to avoid hanging on login nodes with many cores
 _ray_num_cpus = int(os.environ.get("RAY_NUM_CPUS", min(os.cpu_count() or 1, 4)))
+ray.init(num_cpus=_ray_num_cpus, log_to_driver=False)
 
 @ray.remote(max_retries=10, retry_exceptions=False)
 def generate_model(bitwidth, config_params):
@@ -632,14 +527,13 @@ def generate_model(bitwidth, config_params):
 def threaded_exec(batch_range: int, batch_size: int, config_params: dict, output_dir: str):
     """
     Execute model generation in batches.
-
+    
     Args:
         batch_range (int): Number of files to generate
         batch_size (int): Number of models per file
         config_params (dict): Configuration parameters
         output_dir (str): Output directory
     """
-    ray.init(num_cpus=_ray_num_cpus, log_to_driver=False)
     succeeded = 0
 
     assert batch_range > 0
@@ -675,12 +569,10 @@ if __name__ == '__main__':
     
     # Ensure output directory exists
     os.makedirs(args.output_dir, exist_ok=True)
-
-    if args.cartesian:
-        cartesian_exec(config_params, args.output_dir)
-    else:
-        threaded_exec(args.batch_range, args.batch_size, config_params, args.output_dir)
-
+    
+    # Run the threaded execution
+    threaded_exec(args.batch_range, args.batch_size, config_params, args.output_dir)
+    
     logger.info("Model generation completed successfully")
     
     # left this here as an example but everything beyond this line in __name__ can be deleted

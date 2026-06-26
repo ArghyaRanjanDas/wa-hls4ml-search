@@ -63,9 +63,8 @@ class CatapultDataflowConfig:
     write_tar: int = 0
 
     # Extra knobs (NOT part of catapult_ai_nn.config_for_dataflow signature)
-    # Used as post-gen patches to avoid TCL complexity.
+    # Used as a post-gen patch to avoid TCL complexity.
     min_fifo_depth: int = 16
-    BramFactor: Optional[int] = None  # None = don't override; 0 = all weights to BRAM; N = threshold
 
     def __post_init__(self) -> None:
         # Basic sanity checks
@@ -81,8 +80,6 @@ class CatapultDataflowConfig:
             raise ValueError("RandomTBFrames must be >= 0")
         if self.min_fifo_depth < 1:
             raise ValueError("min_fifo_depth must be >= 1")
-        if self.BramFactor is not None and self.BramFactor < 0:
-            raise ValueError("BramFactor must be >= 0")
 
     def to_kwargs(self, *, signature_only: bool = True, drop_none: bool = False, int_flags: bool = False) -> Dict[str, Any]:
         """

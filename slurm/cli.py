@@ -36,15 +36,3 @@ def add_slurm_args(parser):
         '--collect-slurm', type=str, default=None, metavar='RUN_DIR',
         help='Skip synthesis, collect reports from a completed SLURM run',
     )
-    parser.add_argument(
-        '--slurm-parallelism', type=int, default=1,
-        help='Syntheses to run in parallel per node (default: 1)',
-    )
-    parser.add_argument(
-        '--slurm-mem-per-job', type=str, default='32G',
-        help='RAM to reserve per synthesis (default: 32G)',
-    )
-    parser.add_argument(
-        '--slurm-cpus-per-job', type=int, default=2,
-        help='CPUs to reserve per synthesis (default: 2)',
-    )

@@ -14,24 +14,6 @@ This directory contains the SLURM-specific code for running Catapult HLS synthes
 | `examples/run_scale.sh` | 100-task production run (real models, ~45 min wall-clock with the 32-node QoS cap) |
 | `examples/run_scale_toy.sh` | 100-task toy stress test (~12 min, 99/100 success rate) |
 
-### Catapult ASIC orchestrators (`examples/`)
-
-The scripts below drive Catapult HLS synthesis via **GNU parallel** (not SLURM job arrays).
-Each orchestrator spawns 3 nodes × 100 parallel slots = 300 concurrent Catapult instances
-(one per license), submits batches via `sbatch`, and auto-retries with `--resume-failed`.
-
-| Script | Purpose |
-|---|---|
-| `submit_45nm_sz128.sh` | 45nm sz128 extension: L=1/2/3, `N_LAYERS=N sbatch`. Cartesian (L≤2) or LHS (L=3). |
-| `submit_45nm_nlayer_lhs.sh` | 45nm deep networks: L≥4, `N_LAYERS=N sbatch`. LHS from scratch. |
-| `run_dense_1layer_gf22_cartesian.sh` | GF22nm 1-layer full cartesian (1,800 archs × 4 RF). |
-| `submit_gf22_nlayer_lhs.sh` | GF22nm L≥2 LHS: models extracted from 45nm archive, `N_LAYERS=N sbatch`. Supports `EXCLUDE_FILE`. |
-| `run_rerun_from_archive.sh` | Retry failed designs using model extracted from a sibling-RF tarball. |
-| `archive_run.sh` | Archive a completed run to nangate45/ or gf22fdx/ (auto-detects tech from path). |
-| `check_failures.sh` | Scan a run dir for missing tarballs; write `failed_designs.txt`. |
-| `populate_failed_designs.py` | Scan archive JSON reports for synthesis failures → `failed_designs.txt`. |
-| `sample_lhs_from_archive.py` | KD-tree LHS sampling from the 45nm archive → candidates file for GF22 runs. |
-
 ## Index of files the SLURM workflow touches (across the whole repo)
 
 The SLURM driver lives here, but it depends on a few sibling files. For a complete review:
